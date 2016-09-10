@@ -419,8 +419,7 @@ will be updated to:
 
 where <lastModifiedYear> is obtained from the 'git log' history.
 
-This module also handles copyright headers that have only a single year. In
-those cases:
+This subcommand also handles copyright headers that have only a single year. In those cases:
 
 // Copyright (c) <year> The Bitcoin Core developers
 
@@ -536,8 +535,8 @@ def exec_insert_header(filename, style):
 
 INSERT_USAGE = """
 Inserts a copyright header for "The Bitcoin Core developers" at the top of the
-file in either Python or C++ syle as determined by the file extension.  If the
-file has a '#!' starting the first line of a Python file, the header is
+file in either Python or C++ style as determined by the file extension. If the
+file is a Python file and it has a '#!' starting the first line, the header is
 inserted in the line below it.
 
 The copyright dates will be set to be:
