@@ -12,6 +12,7 @@
 
 #include <QWidget>
 #include <QCompleter>
+#include <QThread>
 
 class ClientModel;
 class PlatformStyle;
@@ -34,6 +35,8 @@ class RPCConsole: public QWidget
 public:
     explicit RPCConsole(const PlatformStyle *platformStyle, QWidget *parent);
     ~RPCConsole();
+
+    static bool RPCExecuteCommandLine(std::string &strResult, const std::string &strCommand);
 
     void setClientModel(ClientModel *model);
 
@@ -86,6 +89,8 @@ public Q_SLOTS:
     void message(int category, const QString &message, bool html = false);
     /** Set number of connections shown in the UI */
     void setNumConnections(int count);
+    /** Set network state shown in the UI */
+    void setNetworkActive(bool networkActive);
     /** Set number of blocks and last block date shown in the UI */
     void setNumBlocks(int count, const QDateTime& blockDate, double nVerificationProgress, bool headers);
     /** Set size (number of transactions and memory usage) of the mempool in the UI */
@@ -96,6 +101,8 @@ public Q_SLOTS:
     void scrollToEnd();
     /** Handle selection of peer in peers list */
     void peerSelected(const QItemSelection &selected, const QItemSelection &deselected);
+    /** Handle selection caching before update */
+    void peerLayoutAboutToChange();
     /** Handle updated peer information */
     void peerLayoutChanged();
     /** Disconnect a selected node on the Peers tab */
@@ -133,13 +140,17 @@ private:
     ClientModel *clientModel;
     QStringList history;
     int historyPtr;
-    NodeId cachedNodeid;
+    QList<NodeId> cachedNodeids;
     const PlatformStyle *platformStyle;
     RPCTimerInterface *rpcTimerInterface;
     QMenu *peersTableContextMenu;
     QMenu *banTableContextMenu;
     int consoleFontSize;
     QCompleter *autoCompleter;
+    QThread thread;
+
+    /** Update UI with latest network info from model. */
+    void updateNetworkState();
 };
 
 #endif // BITCOIN_QT_RPCCONSOLE_H

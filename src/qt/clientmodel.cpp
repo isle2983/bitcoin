@@ -6,11 +6,13 @@
 
 #include "bantablemodel.h"
 #include "guiconstants.h"
+#include "guiutil.h"
 #include "peertablemodel.h"
 
 #include "chainparams.h"
 #include "checkpoints.h"
 #include "clientversion.h"
+#include "validation.h"
 #include "net.h"
 #include "txmempool.h"
 #include "ui_interface.h"
@@ -27,9 +29,9 @@ static const int64_t nClientStartupTime = GetTime();
 static int64_t nLastHeaderTipUpdateNotification = 0;
 static int64_t nLastBlockTipUpdateNotification = 0;
 
-ClientModel::ClientModel(OptionsModel *optionsModel, QObject *parent) :
+ClientModel::ClientModel(OptionsModel *_optionsModel, QObject *parent) :
     QObject(parent),
-    optionsModel(optionsModel),
+    optionsModel(_optionsModel),
     peerTableModel(0),
     banTableModel(0),
     pollTimer(0)
@@ -68,6 +70,22 @@ int ClientModel::getNumBlocks() const
 {
     LOCK(cs_main);
     return chainActive.Height();
+}
+
+int ClientModel::getHeaderTipHeight() const
+{
+    LOCK(cs_main);
+    if (!pindexBestHeader)
+        return 0;
+    return pindexBestHeader->nHeight;
+}
+
+int64_t ClientModel::getHeaderTipTime() const
+{
+    LOCK(cs_main);
+    if (!pindexBestHeader)
+        return 0;
+    return pindexBestHeader->GetBlockTime();
 }
 
 quint64 ClientModel::getTotalBytesRecv() const
@@ -128,6 +146,11 @@ void ClientModel::updateNumConnections(int numConnections)
     Q_EMIT numConnectionsChanged(numConnections);
 }
 
+void ClientModel::updateNetworkActive(bool networkActive)
+{
+    Q_EMIT networkActiveChanged(networkActive);
+}
+
 void ClientModel::updateAlert()
 {
     Q_EMIT alertsChanged(getStatusBarWarnings());
@@ -148,6 +171,21 @@ enum BlockSource ClientModel::getBlockSource() const
         return BLOCK_SOURCE_NETWORK;
 
     return BLOCK_SOURCE_NONE;
+}
+
+void ClientModel::setNetworkActive(bool active)
+{
+    if (g_connman) {
+         g_connman->SetNetworkActive(active);
+    }
+}
+
+bool ClientModel::getNetworkActive() const
+{
+    if (g_connman) {
+        return g_connman->GetNetworkActive();
+    }
+    return false;
 }
 
 QString ClientModel::getStatusBarWarnings() const
@@ -192,7 +230,7 @@ QString ClientModel::formatClientStartupTime() const
 
 QString ClientModel::dataDir() const
 {
-    return QString::fromStdString(GetDataDir().string());
+    return GUIUtil::boostPathToQString(GetDataDir());
 }
 
 void ClientModel::updateBanlist()
@@ -214,6 +252,12 @@ static void NotifyNumConnectionsChanged(ClientModel *clientmodel, int newNumConn
     // Too noisy: qDebug() << "NotifyNumConnectionsChanged: " + QString::number(newNumConnections);
     QMetaObject::invokeMethod(clientmodel, "updateNumConnections", Qt::QueuedConnection,
                               Q_ARG(int, newNumConnections));
+}
+
+static void NotifyNetworkActiveChanged(ClientModel *clientmodel, bool networkActive)
+{
+    QMetaObject::invokeMethod(clientmodel, "updateNetworkActive", Qt::QueuedConnection,
+                              Q_ARG(bool, networkActive));
 }
 
 static void NotifyAlertChanged(ClientModel *clientmodel)
@@ -256,6 +300,7 @@ void ClientModel::subscribeToCoreSignals()
     // Connect signals to client
     uiInterface.ShowProgress.connect(boost::bind(ShowProgress, this, _1, _2));
     uiInterface.NotifyNumConnectionsChanged.connect(boost::bind(NotifyNumConnectionsChanged, this, _1));
+    uiInterface.NotifyNetworkActiveChanged.connect(boost::bind(NotifyNetworkActiveChanged, this, _1));
     uiInterface.NotifyAlertChanged.connect(boost::bind(NotifyAlertChanged, this));
     uiInterface.BannedListChanged.connect(boost::bind(BannedListChanged, this));
     uiInterface.NotifyBlockTip.connect(boost::bind(BlockTipChanged, this, _1, _2, false));
@@ -267,6 +312,7 @@ void ClientModel::unsubscribeFromCoreSignals()
     // Disconnect signals from client
     uiInterface.ShowProgress.disconnect(boost::bind(ShowProgress, this, _1, _2));
     uiInterface.NotifyNumConnectionsChanged.disconnect(boost::bind(NotifyNumConnectionsChanged, this, _1));
+    uiInterface.NotifyNetworkActiveChanged.disconnect(boost::bind(NotifyNetworkActiveChanged, this, _1));
     uiInterface.NotifyAlertChanged.disconnect(boost::bind(NotifyAlertChanged, this));
     uiInterface.BannedListChanged.disconnect(boost::bind(BannedListChanged, this));
     uiInterface.NotifyBlockTip.disconnect(boost::bind(BlockTipChanged, this, _1, _2, false));
