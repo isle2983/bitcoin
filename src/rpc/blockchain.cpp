@@ -187,7 +187,7 @@ void RPCNotifyBlockChange(bool ibd, const CBlockIndex * pindex)
         latestblock.hash = pindex->GetBlockHash();
         latestblock.height = pindex->nHeight;
     }
-	cond_blockchange.notify_all();
+    cond_blockchange.notify_all();
 }
 
 UniValue waitfornewblock(const JSONRPCRequest& request)
