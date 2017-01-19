@@ -25,7 +25,7 @@ class ImportPrunedFundsTest(BitcoinTestFramework):
         self.nodes[0].generate(101)
 
         self.sync_all()
-        
+
         # address
         address1 = self.nodes[0].getnewaddress()
         # pubkey

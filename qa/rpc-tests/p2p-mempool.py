@@ -97,6 +97,6 @@ class P2PMempoolTests(BitcoinTestFramework):
 
         #mininode must be disconnected at this point
         assert_equal(len(self.nodes[0].getpeerinfo()), 0)
-    
+
 if __name__ == '__main__':
     P2PMempoolTests().main()

@@ -12,7 +12,7 @@ from test_framework.script import CScript
 from io import BytesIO
 import time
 
-# A canonical signature consists of: 
+# A canonical signature consists of:
 # <30> <total len> <02> <len R> <R> <02> <len S> <S> <hashtype>
 def unDERify(tx):
     '''
@@ -27,7 +27,7 @@ def unDERify(tx):
         else:
             newscript.append(i)
     tx.vin[0].scriptSig = CScript(newscript)
-    
+
 '''
 This test is meant to exercise BIP66 (DER SIG).
 Connect to a single node.
@@ -41,7 +41,7 @@ Mine 1 old-version block.
 Mine 1 new version block.
 Mine 1 old version block, see that the node rejects.
 '''
-            
+
 class BIP66Test(ComparisonTestFramework):
 
     def __init__(self):
@@ -105,7 +105,7 @@ class BIP66Test(ComparisonTestFramework):
             height += 1
         yield TestInstance(test_blocks, sync_every_block=False)
 
-        ''' 
+        '''
         Check that the new DERSIG rules are not enforced in the 750th
         version 3 block.
         '''
@@ -124,7 +124,7 @@ class BIP66Test(ComparisonTestFramework):
         self.last_block_time += 1
         self.tip = block.sha256
         height += 1
-        yield TestInstance([[block, True]])       
+        yield TestInstance([[block, True]])
 
         ''' Mine 199 new version blocks on last valid tip '''
         test_blocks = []
@@ -159,7 +159,7 @@ class BIP66Test(ComparisonTestFramework):
         height += 1
         yield TestInstance([[block, True]])
 
-        ''' 
+        '''
         Check that the new DERSIG rules are enforced in the 951st version 3
         block.
         '''

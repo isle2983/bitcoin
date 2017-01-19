@@ -11,8 +11,8 @@ from test_framework.test_framework import BitcoinTestFramework
 from test_framework.util import *
 
 class InvalidateTest(BitcoinTestFramework):
-    
-        
+
+
     def __init__(self):
         super().__init__()
         self.setup_clean_chain = True
@@ -20,11 +20,11 @@ class InvalidateTest(BitcoinTestFramework):
 
     def setup_network(self):
         self.nodes = []
-        self.is_network_split = False 
+        self.is_network_split = False
         self.nodes.append(start_node(0, self.options.tmpdir, ["-debug"]))
         self.nodes.append(start_node(1, self.options.tmpdir, ["-debug"]))
         self.nodes.append(start_node(2, self.options.tmpdir, ["-debug"]))
-        
+
     def run_test(self):
         print("Make sure we repopulate setBlockIndexCandidates after InvalidateBlock:")
         print("Mine 4 blocks on Node 0")

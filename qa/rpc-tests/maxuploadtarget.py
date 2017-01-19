@@ -80,7 +80,7 @@ class TestNode(NodeConnCB):
         return success
 
 class MaxUploadTest(BitcoinTestFramework):
- 
+
     def __init__(self):
         super().__init__()
         self.setup_clean_chain = True
@@ -157,7 +157,7 @@ class MaxUploadTest(BitcoinTestFramework):
             assert_equal(test_nodes[0].block_receive_map[big_old_block], i+1)
 
         assert_equal(len(self.nodes[0].getpeerinfo()), 3)
-        # At most a couple more tries should succeed (depending on how long 
+        # At most a couple more tries should succeed (depending on how long
         # the test has been running so far).
         for i in range(3):
             test_nodes[0].send_message(getdata_request)
