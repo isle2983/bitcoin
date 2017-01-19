@@ -422,8 +422,6 @@ public:
 };
 
 
-
-
 class COutput
 {
 public:
@@ -440,8 +438,6 @@ public:
 
     std::string ToString() const;
 };
-
-
 
 
 /** Private key that includes an expiration date in case it never gets used. */

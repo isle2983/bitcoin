@@ -434,14 +434,6 @@ public:
 };
 
 
-
-
-
-
-
-
-
-
 /** Non-refcounted RAII wrapper for FILE*
  *
  * Will automatically close the file when it goes out of scope if not null.

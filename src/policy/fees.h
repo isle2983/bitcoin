@@ -165,7 +165,6 @@ public:
 };
 
 
-
 /** Track confirm delays up to 25 blocks, can't estimate beyond that */
 static const unsigned int MAX_BLOCK_CONFIRMS = 25;
 

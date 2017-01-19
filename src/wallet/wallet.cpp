@@ -1831,8 +1831,6 @@ void CWallet::ResendWalletTransactions(int64_t nBestBlockTime, CConnman* connman
 /** @} */ // end of mapWallet
 
 
-
-
 /** @defgroup Actions
  *
  * @{
@@ -2717,8 +2715,6 @@ CAmount CWallet::GetMinimumFee(unsigned int nTxBytes, unsigned int nConfirmTarge
         nFeeNeeded = maxTxFee;
     return nFeeNeeded;
 }
-
-
 
 
 DBErrors CWallet::LoadWallet(bool& fFirstRunRet)

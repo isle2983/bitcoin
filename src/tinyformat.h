@@ -478,7 +478,6 @@ cog.outl('#define TINYFORMAT_FOREACH_ARGNUM(m) \\\n    ' +
 //[[[end]]]
 
 
-
 namespace detail {
 
 // Type-opaque holder for an argument to format(), with associated actions on

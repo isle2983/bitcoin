@@ -435,7 +435,6 @@ void ForceSetArg(const std::string& strArg, const std::string& strValue)
 }
 
 
-
 static const int screenWidth = 79;
 static const int optIndent = 2;
 static const int msgIndent = 7;

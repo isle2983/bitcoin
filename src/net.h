@@ -553,8 +553,6 @@ public:
 };
 
 
-
-
 class CNetMessage {
 private:
     mutable CHash256 hasher;
@@ -794,7 +792,6 @@ public:
     }
 
 
-
     void AddAddressKnown(const CAddress& _addr)
     {
         addrKnown.insert(_addr.GetKey());
@@ -852,9 +849,6 @@ public:
         return nLocalServices;
     }
 };
-
-
-
 
 
 /** Return a timestamp in the future (in microseconds) for exponentially distributed events. */

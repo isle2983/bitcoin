@@ -195,10 +195,6 @@ template<typename Stream> inline void Serialize(Stream& s, bool a)    { char f=a
 template<typename Stream> inline void Unserialize(Stream& s, bool& a) { char f=ser_readdata8(s); a=f; }
 
 
-
-
-
-
 /**
  * Compact Size
  * size <  253        -- 1 byte
@@ -521,7 +517,6 @@ template<typename Stream, typename T> void Serialize(Stream& os, const std::uniq
 template<typename Stream, typename T> void Unserialize(Stream& os, std::unique_ptr<const T>& p);
 
 
-
 /**
  * If none of the specialized versions above matched, default to calling member function.
  */
@@ -536,9 +531,6 @@ inline void Unserialize(Stream& is, T& a)
 {
     a.Unserialize(is);
 }
-
-
-
 
 
 /**
@@ -560,7 +552,6 @@ void Unserialize(Stream& is, std::basic_string<C>& str)
     if (nSize != 0)
         is.read((char*)&str[0], nSize * sizeof(str[0]));
 }
-
 
 
 /**
@@ -630,7 +621,6 @@ inline void Unserialize(Stream& is, prevector<N, T>& v)
 }
 
 
-
 /**
  * vector
  */
@@ -698,7 +688,6 @@ inline void Unserialize(Stream& is, std::vector<T, A>& v)
 }
 
 
-
 /**
  * pair
  */
@@ -715,7 +704,6 @@ void Unserialize(Stream& is, std::pair<K, T>& item)
     Unserialize(is, item.first);
     Unserialize(is, item.second);
 }
-
 
 
 /**
@@ -744,7 +732,6 @@ void Unserialize(Stream& is, std::map<K, T, Pred, A>& m)
 }
 
 
-
 /**
  * set
  */
@@ -771,7 +758,6 @@ void Unserialize(Stream& is, std::set<K, Pred, A>& m)
 }
 
 
-
 /**
  * unique_ptr
  */
@@ -788,7 +774,6 @@ void Unserialize(Stream& is, std::unique_ptr<const T>& p)
 }
 
 
-
 /**
  * shared_ptr
  */
@@ -803,7 +788,6 @@ void Unserialize(Stream& is, std::shared_ptr<const T>& p)
 {
     p = std::make_shared<const T>(deserialize, is);
 }
-
 
 
 /**
@@ -829,13 +813,6 @@ inline void SerReadWrite(Stream& s, T& obj, CSerActionUnserialize ser_action)
 {
     ::Unserialize(s, obj);
 }
-
-
-
-
-
-
-
 
 
 /* ::GetSerializeSize implementations

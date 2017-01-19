@@ -100,7 +100,6 @@ Q_SIGNALS:
 };
 
 
-
 class SendConfirmationDialog : public QMessageBox
 {
     Q_OBJECT

@@ -1285,6 +1285,5 @@ class FullBlockTest(ComparisonTestFramework):
             chain1_tip += 2
 
 
-
 if __name__ == '__main__':
     FullBlockTest().main()

@@ -753,13 +753,6 @@ const uint256& CNetMessage::GetMessageHash() const
 }
 
 
-
-
-
-
-
-
-
 // requires LOCK(cs_vSend)
 size_t CConnman::SocketSendData(CNode *pnode)
 {
@@ -1327,10 +1320,6 @@ void CConnman::WakeMessageHandler()
 }
 
 
-
-
-
-
 #ifdef USE_UPNP
 void ThreadMapPort()
 {
@@ -1448,10 +1437,6 @@ void MapPort(bool)
 #endif
 
 
-
-
-
-
 static std::string GetDNSHost(const CDNSSeedData& data, ServiceFlags* requiredServiceBits)
 {
     //use default host for non-filter-capable seeds or if we use the default service bits (NODE_NETWORK)
@@ -1524,16 +1509,6 @@ void CConnman::ThreadDNSAddressSeed()
 
     LogPrintf("%d addresses found from DNS seeds\n", found);
 }
-
-
-
-
-
-
-
-
-
-
 
 
 void CConnman::DumpAddresses()
@@ -1896,10 +1871,6 @@ void CConnman::ThreadMessageHandler()
         fMsgProcWake = false;
     }
 }
-
-
-
-
 
 
 bool CConnman::BindListenPort(const CService &addrBind, std::string& strError, bool fWhitelisted)
