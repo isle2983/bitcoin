@@ -276,8 +276,8 @@ class TestManager(object):
     # Either check that the mempools all agree with each other, or that
     # txhash's presence in the mempool matches the outcome specified.
     # This is somewhat of a strange comparison, in that we're either comparing
-    # a particular tx to an outcome, or the entire mempools altogether;
-    # perhaps it would be useful to add the ability to check explicitly that
+    # a particular tx to an outcome, or the entire mempools altogether.
+    # Perhaps it would be useful to add the ability to check explicitly that
     # a particular tx's existence in the mempool is the same across all nodes.
     def check_mempool(self, txhash, outcome):
         with mininode_lock:

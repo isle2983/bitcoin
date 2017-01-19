@@ -832,8 +832,8 @@ class FullBlockTest(ComparisonTestFramework):
         #                                                                                    \-> b61 (18)
         #
         # Blocks are not allowed to contain a transaction whose id matches that of an earlier,
-        # not-fully-spent transaction in the same chain. To test, make identical coinbases;
-        # the second one should be rejected.
+        # not-fully-spent transaction in the same chain. To test, make identical coinbases.
+        # The second one should be rejected.
         #
         tip(60)
         b61 = block(61, spend=out[18])
@@ -1122,8 +1122,8 @@ class FullBlockTest(ComparisonTestFramework):
         #
         #    The tx'es must be unsigned and pass the node's mempool policy.  It is unsigned for the
         #    rather obscure reason that the Python signature code does not distinguish between
-        #    Low-S and High-S values (whereas the bitcoin code has custom code which does so);
-        #    as a result of which, the odds are 50% that the python code will use the right
+        #    Low-S and High-S values (whereas the bitcoin code has custom code which does so).
+        #    As a result of which, the odds are 50% that the python code will use the right
         #    value and the transaction will be accepted into the mempool. Until we modify the
         #    test framework to support low-S signing, we are out of luck.
         #

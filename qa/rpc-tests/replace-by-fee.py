@@ -22,8 +22,8 @@ def make_utxo(node, amount, confirmed=True, scriptPubKey=CScript([1])):
 
     Mines coins as needed.
 
-    confirmed - txouts created will be confirmed in the blockchain;
-                unconfirmed otherwise.
+    confirmed - txouts created will be confirmed in the blockchain.
+                Otherwise, they will be unconfirmed.
     """
     fee = 1*COIN
     while node.getbalance() < satoshi_round((amount + fee)/COIN):
