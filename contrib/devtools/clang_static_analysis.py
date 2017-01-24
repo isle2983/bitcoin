@@ -8,22 +8,21 @@ import os
 import subprocess
 import time
 import plistlib
+import itertools
 
-# Use the installed scan-binary by default:
+# Use the installed scan-build by default:
 SCAN_BUILD_BINARY = "scan-build"
-# Alternatively, use a specific binary like so:
+# Alternatively, use a specific executable like so:
 # SCAN_BUILD_BINARY = "/usr/share/clang/scan-build-3.4/scan-build"
 
 RESULT_DIR = "/tmp/bitcoin-scan-build/"
 CLEAN_LOG = "%smake_clean.log" % RESULT_DIR
 BUILD_LOG = "%sscan_build.log" % RESULT_DIR
 
-MAKE_JOBS = "-j16"
-MAKE_CMD = "make %s" % MAKE_JOBS
+DEFAULT_MAKE_JOBS = "-j6"  # is overridden by MAKEJOBS env variable
 MAKE_CLEAN_CMD = "make clean"
 
-SCAN_BUILD_CMD = "%%s -k -plist-html --keep-empty -o %s %s" % (RESULT_DIR,
-                                                               MAKE_CMD)
+SCAN_BUILD_CMD = "%%s -k -plist-html --keep-empty -o %s make %%s" % RESULT_DIR
 
 ###############################################################################
 # cmd helpers
@@ -55,16 +54,17 @@ def make_result_dir():
 def locate_scan_build():
     out_lines = get_cmd_output('which %s' % SCAN_BUILD_BINARY)
     if len(out_lines) == 0:
-        sys.exit("*** could not find binary '%s'" % SCAN_BUILD_BINARY)
-    binary = os.path.realpath(out_lines[0])
-    print("using binary: %s" % binary)
-    return binary
+        sys.exit("*** could not find executable '%s'" % SCAN_BUILD_BINARY)
+    executable = os.path.realpath(out_lines[0])
+    print("using scan-build:    %s" % executuable)
+    return executable
 
 
 def assert_has_makefile(base_directory):
     if not os.path.exists("Makefile"):
         sys.exit("*** no Makefile found in %s. You must ./autogen.sh and/or "
                  "./configure first" % base_directory)
+
 
 def locate_result_directory():
     # Scan-build puts results in a directory where the directory name is a
@@ -74,6 +74,11 @@ def locate_result_directory():
     subdir = sorted([d for d in os.listdir(RESULT_DIR) if
                      os.path.isdir(os.path.join(RESULT_DIR, d))])[-1]
     return os.path.join(RESULT_DIR, subdir)
+
+
+def get_make_jobs():
+    return (os.environ['MAKEJOBS'] if 'MAKEJOBS' in
+            os.environ else DEFAULT_MAKE_JOBS)
 
 
 ###############################################################################
@@ -87,8 +92,8 @@ def make_clean():
     call_cmd(MAKE_CLEAN_CMD, CLEAN_LOG)
 
 
-def run_scan_build(binary):
-    cmd = SCAN_BUILD_CMD % binary
+def run_scan_build(executuable):
+    cmd = SCAN_BUILD_CMD % (executuable, get_make_jobs())
     print("Running:             %s" % cmd)
     print("stderr/stdout to:    %s" % BUILD_LOG)
     print("This might take a while..." )
@@ -127,53 +132,62 @@ def flush_report():
 
 
 ###############################################################################
-# get issues
+# parse plist in RESULT_DIR
 ###############################################################################
 
-def plist_is_relevant(plist):
-    return len(plist['files']) > 0
-
+def find_locations(paths, files):
+    for p in paths:
+        if p['kind'] == 'event':
+            yield {'extended_message': p['extended_message'],
+                   'line':             p['location']['line'],
+                   'lcol':             p['location']['col'],
+                   'file':             files[d['location']['file']]}
 
 def plist_to_issue(plist):
-    return {'type':        plist['diagnostics'][0]['type'],
-            'description': plist['diagnostics'][0]['description'],
-            'line':        plist['diagnostics'][0]['location']['line'],
-            'col':         plist['diagnostics'][0]['location']['col'],
-            'file': plist['files'][plist['diagnostics'][0]['location']['file']],
-           }
+    files = plist['files']
+    for d in plist['diagnostics']:
+        yield {'type':        d['type'],
+               'description': d['description'],
+               'line':        d['location']['line'],
+               'col':         d['location']['col'],
+               'file':        files[d['location']['file']],
+               'locations':   list(find_locations(d['path'], files))}
 
-def get_issues(directory):
+
+def parse_plist_files(directory):
     plist_files = [os.path.join(directory, f) for f in os.listdir(directory) if
                    f.endswith('.plist')]
     parsed_plists = [plistlib.readPlist(plist_file) for plist_file in
                      plist_files]
-
     relevant_plists = [plist for plist in parsed_plists if
-                       plist_is_relevant(plist)]
+                       len(plist['diagnostics']) > 0]
+    return list(itertools.chain(*[plist_to_issue(plist) for plist in
+                                  relevant_plists]))
 
-    return [plist_to_issue(plist) for plist in relevant_plists]
 
 ###############################################################################
 # report execution
 ###############################################################################
 
-def generate_results(binary):
-    #make_clean()
-    #run_scan_build(binary)
+
+def generate_results(executable):
+    make_clean()
+    run_scan_build(executable)
 
     # TODO put this in run_scan_build:
     directory = locate_result_directory()
-    print("Results in:          %s" % directory)
+    print("Results in:          %s\n" % directory)
     return directory
 
+
 def report_issue(issue):
-    report("\tType:         %s\n" % issue['type'])
     report("\tDescription:  %s\n" % issue['description'])
     report("\tLocation:     %s:%d:%d\n" % (issue['file'], issue['line'],
                                            issue['col']))
 
+
 def report_result_directory(start_time, directory):
-    issues = get_issues(directory)
+    issues = parse_plist_files(directory)
     elapsed_time = time.time() - start_time
     report(SEPARATOR)
     report("Took %.2f seconds to analyze with scan-build\n" % elapsed_time)
@@ -184,7 +198,7 @@ def report_result_directory(start_time, directory):
         report_issue(issue)
         idx = idx + 1
     report(SEPARATOR)
-    report("Full details can be viewed in a browser by running:\n")
+    report("Full details can be seen in a browser by running:\n")
     report("    $ scan-view %s\n" % directory)
     report(SEPARATOR)
     flush_report()
@@ -196,9 +210,11 @@ def exec_report(base_directory):
     original_cwd = os.getcwd()
     os.chdir(base_directory)
     assert_has_makefile(base_directory)
-    binary = locate_scan_build()
-    directory = generate_results(binary)
+    exacutable = locate_scan_build()
+
+    directory = generate_results(executable)
     report_result_directory(start_time, directory)
+
     os.chdir(original_cwd)
 
 
@@ -231,6 +247,15 @@ def report_cmd(argv):
 
 
 ###############################################################################
+# check execution
+###############################################################################
+
+
+def exec_check(base_directory):
+    pass
+
+
+###############################################################################
 # check cmd
 ###############################################################################
 
@@ -255,7 +280,7 @@ def check_cmd(argv):
     if not os.path.exists(base_directory):
         sys.exit("*** bad <base_directory>: %s" % base_directory)
 
-    #exec_check(base_directory)
+    exec_check(base_directory)
 
 ###############################################################################
 # UI
