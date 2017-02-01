@@ -13,6 +13,9 @@ import fnmatch
 import difflib
 import hashlib
 from multiprocessing import Pool
+from framework.report import Report
+
+R = Report()
 
 ###############################################################################
 # settings for the set of files that this applies to
@@ -204,36 +207,6 @@ def compute_diff_info(file_info):
 
 
 ###############################################################################
-# report helpers
-###############################################################################
-
-
-SEPARATOR = '-' * 80 + '\n'
-REPORT = []
-
-
-def report(string):
-    REPORT.append(string)
-
-
-GREEN = '\033[92m'
-RED = '\033[91m'
-ENDC = '\033[0m'
-
-
-def red_report(string):
-    report(RED + string + ENDC)
-
-
-def green_report(string):
-    report(GREEN + string + ENDC)
-
-
-def flush_report():
-    print(''.join(REPORT), end="")
-
-
-###############################################################################
 # warning for old versions of clang-format
 ###############################################################################
 
@@ -241,33 +214,33 @@ def flush_report():
 def report_if_parameters_unsupported(opts):
     if len(opts.unknown_style_params) == 0:
         return
-    report(SEPARATOR)
-    red_report("WARNING")
-    report(" - This version of clang-format does not support the "
-           "following style\nparameters, so they were not used:\n\n")
+    R.separator()
+    R.add_red("WARNING")
+    R.add(" - This version of clang-format does not support the "
+          "following style\nparameters, so they were not used:\n\n")
     for param in opts.unknown_style_params:
-        report("%s\n" % param)
+        R.add("%s\n" % param)
 
 
 def exit_if_parameters_unsupported(opts):
     if opts.force:
         return
     if len(opts.unknown_style_params) > 0:
-        red_report("\nWARNING: ")
-        report("clang-format version %s does not support all "
-               "parameters given in\n%s\n\n" % (opts.bin_version,
-                                                opts.style_file))
-        report("Unsupported parameters:\n")
+        R.add_red("\nWARNING: ")
+        R.add("clang-format version %s does not support all "
+              "parameters given in\n%s\n\n" % (opts.bin_version,
+                                               opts.style_file))
+        R.add("Unsupported parameters:\n")
         for param in opts.unknown_style_params:
-            report("\t%s\n" % param)
+            R.add("\t%s\n" % param)
         # The recommendation is from experimentation where it is found that the
         # applied formating has subtle differences that vary between major
         # releases of clang-format. A chosen standard of formatting should
         # probably be based on the latest stable release and that should be the
         # recommendation.
-        report("\nUsing clang-format version 3.9.0 or higher is recommended\n")
-        report("Use the --force option to override and proceed anyway.\n\n")
-        flush_report()
+        R.add("\nUsing clang-format version 3.9.0 or higher is recommended\n")
+        R.add("Use the --force option to override and proceed anyway.\n\n")
+        R.flush()
         sys.exit("*** missing clang-format support.")
 
 
@@ -277,12 +250,12 @@ def exit_if_parameters_unsupported(opts):
 
 
 def report_examined_files(file_infos, in_scope_file_list, full_file_list):
-    report("%4d files tracked according to '%s'\n" %
-           (len(full_file_list), GIT_LS_CMD))
-    report("%4d files in scope according to SOURCE_FILES and ALWAYS_IGNORE "
-           "settings\n" % len(in_scope_file_list))
-    report("%4d files examined according to listed targets\n" %
-           len(file_infos))
+    R.add("%4d files tracked according to '%s'\n" %
+          (len(full_file_list), GIT_LS_CMD))
+    R.add("%4d files in scope according to SOURCE_FILES and ALWAYS_IGNORE "
+          "settings\n" % len(in_scope_file_list))
+    R.add("%4d files examined according to listed targets\n" %
+          len(file_infos))
 
 
 def score_in_range_inclusive(score, lower, upper):
@@ -292,8 +265,8 @@ def score_in_range_inclusive(score, lower, upper):
 def report_files_in_range(file_infos, lower, upper):
     in_range = [file_info for file_info in file_infos if
                 score_in_range_inclusive(file_info['score'], lower, upper)]
-    report("Files %2d%%-%2d%% matching:        %4d\n" % (lower, upper,
-                                                         len(in_range)))
+    R.add("Files %2d%%-%2d%% matching:        %4d\n" % (lower, upper,
+                                                        len(in_range)))
 
 
 def report_files_in_ranges(file_infos):
@@ -308,10 +281,10 @@ def report_slowest_diffs(file_infos):
                file_info['diff_time'] > 1.0]
     if len(slowest) == 0:
         return
-    report("Slowest diffs:\n")
+    R.add("Slowest diffs:\n")
     for file_info in slowest:
-        report("%6.02fs for %s\n" % (file_info['diff_time'],
-                                     file_info['filename']))
+        R.add("%6.02fs for %s\n" % (file_info['diff_time'],
+                                    file_info['filename']))
 
 
 def print_report(opts, elapsed_time, file_infos, in_scope_file_list,
@@ -335,30 +308,30 @@ def print_report(opts, elapsed_time, file_infos, in_scope_file_list,
         h.update(file_info['formatted_md5'].encode('utf-8'))
     formatted_md5 = h.hexdigest()
 
-    report(SEPARATOR)
+    R.separator()
     report_examined_files(file_infos, in_scope_file_list, full_file_list)
-    report(SEPARATOR)
-    report("clang-format bin:         %s\n" % opts.bin_path)
-    report("clang-format version:     %s\n" % opts.bin_version)
-    report("Using style in:           %s\n" % opts.style_file)
+    R.separator()
+    R.add("clang-format bin:         %s\n" % opts.bin_path)
+    R.add("clang-format version:     %s\n" % opts.bin_version)
+    R.add("Using style in:           %s\n" % opts.style_file)
     report_if_parameters_unsupported(opts)
-    report(SEPARATOR)
-    report("Parallel jobs for diffs:   %d\n" % opts.jobs)
-    report("Elapsed time:              %.02fs\n" % elapsed_time)
+    R.separator()
+    R.add("Parallel jobs for diffs:   %d\n" % opts.jobs)
+    R.add("Elapsed time:              %.02fs\n" % elapsed_time)
     report_slowest_diffs(file_infos)
-    report(SEPARATOR)
-    report("Files 100%% matching:       %8d\n" % len(matching))
-    report("Files <100%% matching:      %8d\n" % len(not_matching))
-    report("Formatted content MD5:      %s\n" % formatted_md5)
-    report(SEPARATOR)
+    R.separator()
+    R.add("Files 100%% matching:       %8d\n" % len(matching))
+    R.add("Files <100%% matching:      %8d\n" % len(not_matching))
+    R.add("Formatted content MD5:      %s\n" % formatted_md5)
+    R.separator()
     report_files_in_ranges(file_infos)
-    report(SEPARATOR)
-    report("\n")
-    report(scoreboard(score, pre_format_lines, added_lines, removed_lines,
-                      unchanged_lines, post_format_lines))
-    report("\n")
-    report(SEPARATOR)
-    flush_report()
+    R.separator()
+    R.add("\n")
+    R.add(scoreboard(score, pre_format_lines, added_lines, removed_lines,
+                     unchanged_lines, post_format_lines))
+    R.add("\n")
+    R.separator()
+    R.flush()
 
 
 def exec_report(opts):
@@ -383,30 +356,29 @@ def get_failures(file_infos):
 
 
 def report_failure(failure):
-    report("A code format issue was detected in ")
-    red_report("%s\n" % failure['filename'])
-    report(scoreboard(failure['score'], failure['pre_format_lines'],
-                      failure['added_lines'], failure['removed_lines'],
-                      failure['unchanged_lines'],
-                      failure['post_format_lines']))
+    R.add("A code format issue was detected in ")
+    r.add_red("%s\n" % failure['filename'])
+    R.add(scoreboard(failure['score'], failure['pre_format_lines'],
+                     failure['added_lines'], failure['removed_lines'],
+                     failure['unchanged_lines'],
+                     failure['post_format_lines']))
 
 
 def print_check(opts, failures, file_infos, in_scope_file_list,
                 full_file_list):
-    report(SEPARATOR)
+    R.separator()
     report_examined_files(file_infos, in_scope_file_list, full_file_list)
     for failure in failures:
-        report(SEPARATOR)
+        R.separator()
         report_failure(failure)
-    report(SEPARATOR)
+    R.separator()
     if len(failures) == 0:
-        green_report("No format issues found!\n")
+        R.add_green("No format issues found!\n")
     else:
-        red_report("These files can be auto-formatted by running:\n")
-        report("$ contrib/devtools/clang_format.py format [target "
-               "[target ...]]\n")
-    report(SEPARATOR)
-    flush_report()
+        R.add_red("These files can be auto-formatted by running:\n")
+        R.add("$ contrib/devtools/clang_format.py format [target "
+              "[target ...]]\n")
+    R.separator()
 
 
 def exec_check(opts):

@@ -11,6 +11,10 @@ import datetime
 import os
 import itertools
 
+from framework.report import Report
+
+R = Report()
+
 ###############################################################################
 # style rules
 ###############################################################################
@@ -157,36 +161,6 @@ def gather_file_info(filename):
 
 
 ###############################################################################
-# report helpers
-###############################################################################
-
-
-SEPARATOR = '-' * 80 + '\n'
-REPORT = []
-
-
-def report(string):
-    REPORT.append(string)
-
-
-GREEN = '\033[92m'
-RED = '\033[91m'
-ENDC = '\033[0m'
-
-
-def red_report(string):
-    report(RED + string + ENDC)
-
-
-def green_report(string):
-    report(GREEN + string + ENDC)
-
-
-def flush_report():
-    print(''.join(REPORT), end="")
-
-
-###############################################################################
 # report execution
 ###############################################################################
 
@@ -194,16 +168,16 @@ def flush_report():
 def report_filenames(file_infos):
     if len(file_infos) == 0:
         return
-    report('\t')
-    report('\n\t'.join([file_info['filename'] for file_info in file_infos]))
-    report('\n')
+    R.add('\t')
+    R.add('\n\t'.join([file_info['filename'] for file_info in file_infos]))
+    R.add('\n')
 
 
 def report_summary(file_infos, full_file_list):
-    report("%4d files tracked according to '%s'\n" %
-           (len(full_file_list), GIT_LS_CMD))
-    report("%4d files examined according to STYLE_RULES and ALWAYS_IGNORE "
-           "settings\n" % len(file_infos))
+    R.add("%4d files tracked according to '%s'\n" %
+          (len(full_file_list), GIT_LS_CMD))
+    R.add("%4d files examined according to STYLE_RULES and ALWAYS_IGNORE "
+          "settings\n" % len(file_infos))
 
 
 def file_fails_rule(file_info, rule):
@@ -222,23 +196,23 @@ def report_rule(rule, file_infos):
     failed = [file_info for file_info in file_infos if
               file_fails_rule(file_info, rule)]
 
-    report('Rule title: "%s"\n' % rule['title'])
-    report('File extensions covered by rule:    %s\n' % rule['applies'])
-    report("Files covered by rule:             %4d\n" % len(covered))
-    report("Files not covered by rule:         %4d\n" % len(not_covered))
-    report("Files passed:                      %4d\n" % len(passed))
-    report("Files failed:                      %4d\n" % len(failed))
+    R.add('Rule title: "%s"\n' % rule['title'])
+    R.add('File extensions covered by rule:    %s\n' % rule['applies'])
+    R.add("Files covered by rule:             %4d\n" % len(covered))
+    R.add("Files not covered by rule:         %4d\n" % len(not_covered))
+    R.add("Files passed:                      %4d\n" % len(passed))
+    R.add("Files failed:                      %4d\n" % len(failed))
     report_filenames(failed)
 
 
 def print_report(file_infos, full_file_list):
-    report(SEPARATOR)
+    R.separator()
     report_summary(file_infos, full_file_list)
     for rule in STYLE_RULES:
-        report(SEPARATOR)
+        R.separator()
         report_rule(rule, file_infos)
-    report(SEPARATOR)
-    flush_report()
+    R.separator()
+    R.flush()
 
 
 def exec_report(base_directory):
@@ -291,32 +265,32 @@ def get_all_failures(file_infos):
 
 
 def report_failure(failure):
-    report("An issue was found with ")
-    red_report("%s\n" % failure['filename'])
-    report('Rule: "%s"\n\n' % failure['title'])
+    R.add("An issue was found with ")
+    R.add_red("%s\n" % failure['filename'])
+    R.add('Rule: "%s"\n\n' % failure['title'])
     for line in failure['lines']:
-        report('line %d:\n' % line['number'])
-        report("%s" % line['contents'])
-        report(' ' * (line['character'] - 1))
-        red_report("^\n")
+        R.add('line %d:\n' % line['number'])
+        R.add("%s" % line['contents'])
+        R.add(' ' * (line['character'] - 1))
+        R.add_red("^\n")
 
 
 def print_check_report(file_infos, full_file_list, failures):
-    report(SEPARATOR)
+    R.separator()
     report_summary(file_infos, full_file_list)
 
     for failure in failures:
-        report(SEPARATOR)
+        R.separator()
         report_failure(failure)
 
-    report(SEPARATOR)
+    R.separator()
     if len(failures) == 0:
-        green_report("No style issues found!\n")
+        R.add_green()("No style issues found!\n")
     else:
-        red_report("These issues can be fixed automatically by running:\n")
-        report("$ contrib/devtools/basic_style.py fix <base_directory>\n")
-    report(SEPARATOR)
-    flush_report()
+        R.add_red("These issues can be fixed automatically by running:\n")
+        R.add("$ contrib/devtools/basic_style.py fix <base_directory>\n")
+    R.separator()
+    R.flush()
 
 
 def exec_check(base_directory):

@@ -10,6 +10,9 @@ import time
 import plistlib
 import itertools
 import argparse
+from framework.report import Report
+
+R = Report()
 
 ###############################################################################
 # parse .plist files in directory into issues
@@ -88,36 +91,6 @@ def do_analysis(opts):
 
 
 ###############################################################################
-# report helpers
-###############################################################################
-
-
-SEPARATOR = '-' * 80 + '\n'
-REPORT = []
-
-
-def report(string):
-    REPORT.append(string)
-
-
-GREEN = '\033[92m'
-RED = '\033[91m'
-ENDC = '\033[0m'
-
-
-def red_report(string):
-    report(RED + string + ENDC)
-
-
-def green_report(string):
-    report(GREEN + string + ENDC)
-
-
-def flush_report():
-    print(''.join(REPORT), end="")
-
-
-###############################################################################
 # issue reporting
 ###############################################################################
 
@@ -125,28 +98,28 @@ def flush_report():
 def report_issues_compact(issues):
     issue_no = 0
     for issue in issues:
-        report("%d: %s:%d:%d - %s\n" % (issue_no, issue['file'], issue['line'],
-                                        issue['col'], issue['description']))
+        R.add("%d: %s:%d:%d - %s\n" % (issue_no, issue['file'], issue['line'],
+                                       issue['col'], issue['description']))
         issue_no = issue_no + 1
 
 
 def report_issue(issue):
-    report("An issue has been found in ")
-    red_report("%s:%d:%d\n" % (issue['file'], issue['line'], issue['col']))
-    report("Type:         %s\n" % issue['type'])
-    report("Description:  %s\n\n" % issue['description'])
+    R.add("An issue has been found in ")
+    R.add_red("%s:%d:%d\n" % (issue['file'], issue['line'], issue['col']))
+    R.add("Type:         %s\n" % issue['type'])
+    R.add("Description:  %s\n\n" % issue['description'])
     event_no = 0
     for event in issue['events']:
-        report("%d: " % event_no)
-        report("%s:%d:%d - " % (event['file'], event['line'], event['col']))
-        report("%s\n" % event['message'])
+        R.add("%d: " % event_no)
+        R.add("%s:%d:%d - " % (event['file'], event['line'], event['col']))
+        R.add("%s\n" % event['message'])
         event_no = event_no + 1
 
 
 def report_issues(issues):
     for issue in issues:
         report_issue(issue)
-        report(SEPARATOR)
+        R.separator()
 
 
 ###############################################################################
@@ -155,17 +128,17 @@ def report_issues(issues):
 
 
 def report_output(opts, result_subdir, issues, elapsed_time):
-    report(SEPARATOR)
-    report("Took %.2f seconds to analyze with scan-build\n" % elapsed_time)
-    report("Found %d issues:\n" % len(issues))
-    report(SEPARATOR)
+    R.separator()
+    R.add("Took %.2f seconds to analyze with scan-build\n" % elapsed_time)
+    R.add("Found %d issues:\n" % len(issues))
+    R.separator()
     if len(issues) > 0:
         report_issues_compact(issues)
-        report(SEPARATOR)
-        report("Full details can be seen in a browser by running:\n")
-        report("    $ %s %s\n" % (opts.scan_view, result_subdir))
-        report(SEPARATOR)
-    flush_report()
+        R.separator()
+        R.add("Full details can be seen in a browser by running:\n")
+        R.add("    $ %s %s\n" % (opts.scan_view, result_subdir))
+        R.separator()
+    R.flush()
 
 
 def exec_report(opts):
@@ -181,15 +154,15 @@ def exec_report(opts):
 
 
 def check_output(opts, result_subdir, issues):
-    report(SEPARATOR)
+    R.separator()
     report_issues(issues)
     if len(issues) == 0:
-        green_report("No static analysis issues found!\n")
+        R.add_green("No static analysis issues found!\n")
     else:
-        red_report("Full details can be seen in a browser by running:\n")
-        report("    $ %s %s\n" % (opts.scan_view, result_subdir))
-    report(SEPARATOR)
-    flush_report()
+        R.add_red("Full details can be seen in a browser by running:\n")
+        R.add("    $ %s %s\n" % (opts.scan_view, result_subdir))
+    R.separator()
+    R.flush()
 
 
 def exec_check(opts):

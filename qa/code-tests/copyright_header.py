@@ -9,7 +9,9 @@ import sys
 import subprocess
 import datetime
 import os
+from framework.report import Report
 
+R = Report()
 
 ###############################################################################
 # helper for converting fnmatch expressions into python regexes and compiling
@@ -112,7 +114,7 @@ NO_HEADER_EXPECTED_COMPILED = compile_fnmatches(NO_HEADER_EXPECTED)
 
 OTHER_COPYRIGHT_EXPECTED = [
     # Uses of the word 'copyright' that are unrelated to the header:
-    'contrib/devtools/copyright_header.py',
+    'qa/code-tests/copyright_header.py',
     'contrib/devtools/gen-manpages.sh',
     'share/qt/extract_strings_qt.py',
     'src/Makefile.qt.include',
@@ -337,31 +339,23 @@ def gather_file_info(filename):
 ###############################################################################
 
 
-SEPARATOR = 80 * '-' + '\n'
-REPORT = []
-
-
-def report(string):
-    REPORT.append(string)
-
-
 def report_filenames(file_infos):
     if len(file_infos) == 0:
         return
-    report('\t')
-    report('\n\t'.join([file_info['filename'] for file_info in file_infos]))
-    report('\n')
+    R.add('\t')
+    R.add('\n\t'.join([file_info['filename'] for file_info in file_infos]))
+    R.add('\n')
 
 
 def report_summary(file_infos, full_file_list):
-    report("%4d files tracked according to '%s'\n" %
+    R.add("%4d files tracked according to '%s'\n" %
            (len(full_file_list), GIT_LS_CMD))
-    report("%4d files examined according to SOURCE_FILES and ALWAYS_IGNORE "
-           "fnmatch rules\n" % len(file_infos))
+    R.add("%4d files examined according to SOURCE_FILES and ALWAYS_IGNORE "
+          "fnmatch rules\n" % len(file_infos))
 
 
 def report_failure_reason(reason, failed_file_infos):
-    report('Reason - "%s":\n' % reason['description'])
+    R.add('Reason - "%s":\n' % reason['description'])
     report_filenames(failed_file_infos)
 
 
@@ -386,28 +380,28 @@ def report_details(file_infos):
     failed = [file_info for file_info in file_infos if not file_info['pass']]
     passed = [file_info for file_info in file_infos if file_info['pass']]
 
-    report("Files expected to have header:                                    "
-           "%4d\n" % len(hdr_expected))
-    report("Files not expected to have header:                                "
-           "%4d\n" % len(no_hdr_expected))
-    report("Files not expected to have 'copyright' occurrence outside header: "
-           "%4d\n" % len(no_other_copyright_expected))
-    report("Files expected to have 'copyright' occurrence outside header:     "
-           "%4d\n" % len(other_copyright_expected))
-    report("Files passed:                                                     "
+    R.add("Files expected to have header:                                    "
+          "%4d\n" % len(hdr_expected))
+    R.add("Files not expected to have header:                                "
+          "%4d\n" % len(no_hdr_expected))
+    R.add("Files not expected to have 'copyright' occurrence outside header: "
+          "%4d\n" % len(no_other_copyright_expected))
+    R.add("Files expected to have 'copyright' occurrence outside header:     "
+          "%4d\n" % len(other_copyright_expected))
+    R.add("Files passed:                                                     "
            "%4d\n" % len(passed))
-    report("Files failed:                                                     "
-           "%4d\n" % len(failed))
+    R.add("Files failed:                                                     "
+          "%4d\n" % len(failed))
     report_failure_reasons(failed)
 
 
 def print_report(file_infos, full_file_list):
-    report(SEPARATOR)
+    R.separator()
     report_summary(file_infos, full_file_list)
-    report(SEPARATOR)
+    R.separator()
     report_details(file_infos)
-    report(SEPARATOR)
-    print(''.join(REPORT), end="")
+    R.separator()
+    R.flush()
 
 
 def exec_report(base_directory):
@@ -454,42 +448,29 @@ def report_cmd(argv):
 ###############################################################################
 
 
-GREEN = '\033[92m'
-RED = '\033[91m'
-ENDC = '\033[0m'
-
-
-def red_report(string):
-    report(RED + string + ENDC)
-
-
-def green_report(string):
-    report(GREEN + string + ENDC)
-
-
 def get_failures(file_infos):
     return [file_info for file_info in file_infos if not file_info['pass']]
 
 
 def report_failure(failure):
-    report("An issue was found with ")
-    red_report("%s" % failure['filename'])
-    report('\n\n%s\n\n' % failure['evaluation']['description'])
-    report('Info for resolution:\n')
-    report(failure['evaluation']['resolution'])
+    R.add("An issue was found with ")
+    R.add_red("%s" % failure['filename'])
+    R.add('\n\n%s\n\n' % failure['evaluation']['description'])
+    R.add('Info for resolution:\n')
+    R.add(failure['evaluation']['resolution'])
 
 
 def print_check_report(full_file_list, file_infos, failures):
-    report(SEPARATOR)
+    R.separator()
     report_summary(file_infos, full_file_list)
     for failure in failures:
-        report(SEPARATOR)
+        R.separator()
         report_failure(failure)
-    report(SEPARATOR)
+    R.separator()
     if len(failures) == 0:
-        green_report("No copyright header issues found!\n")
-        report(SEPARATOR)
-    print(''.join(REPORT), end="")
+        R.add_gren("No copyright header issues found!\n")
+        R.separator()
+    R.flush()
 
 
 def exec_check(base_directory):
