@@ -14,6 +14,7 @@ import difflib
 import hashlib
 from multiprocessing import Pool
 from framework.report import Report
+from framework.path_arg import PathArg, GitPathArg
 
 R = Report()
 
@@ -431,98 +432,56 @@ def get_clang_format_version(bin_path):
 ###############################################################################
 
 
-def is_clang_format_executable(executable):
-    return (executable.startswith('clang-format') and not
-            executable.startswith('clang-format-diff'))
+def compile_target_regex(repo_base_dir, targets):
+    files = [target for target in targets if os.path.isfile(str(target))]
+    wildcards = [os.path.join(target, '*') for target in targets if
+                 os.path.isdir(target)]
+    fnmatches = (files + wildcards)
+    trimmed_fnmatches = [match.split(repo_base_dir + '/')[1] for match in
+                         fnmatches]
+    return re.compile('|'.join([fnmatch.translate(match)
+                                for match in trimmed_fnmatches]))
 
 
-class PathAction(argparse.Action):
-    def _path_exists(self, path):
-        return os.path.exists(path)
-
-    def _assert_exists(self, path):
-        if not self._path_exists(path):
-            sys.exit("*** does not exist: %s" % path)
-
-    def _assert_mode(self, path, flags):
-        if not os.access(path, flags):
-            sys.exit("*** %s does not have correct mode: %x" % (path, flags))
-
-
-class TargetsPathAction(PathAction):
-    def _assert_in_git_repository(self, path):
-        d = os.path.dirname(path) if os.path.isfile(path) else path
-        cmd = 'git -C %s status' % d
-        dn = open(os.devnull, 'w')
-        if (subprocess.call(cmd.split(' '), stderr=dn, stdout=dn) != 0):
-            sys.exit("*** %s is not a git repository" % path)
-
-    def _has_dot_git_dir(self, path):
-        return os.path.isdir(os.path.join(path, '.git/'))
-
-    def _get_repo_base_dir(self, path):
-        self._assert_exists(path)
-        self._assert_in_git_repository(path)
-        if self._has_dot_git_dir(path):
-            return path
-
-        def recurse_repo_base_dir(path):
-            self._assert_in_git_repository(path)
-            d = os.path.dirname(path)
-            if self._has_dot_git_dir(d):
-                return d
-            return recurse_repo_base_dir(d)
-
-        return recurse_repo_base_dir(path)
-
-    def _assert_under_dir(self, target, repo_base_dir):
-        if not target.startswith(repo_base_dir):
-            sys.exit("*** %s is under repo other than %s" % (target,
-                                                             repo_base_dir))
-
-    def _compile_target_regex(self, repo_base_dir, targets):
-        files = [target for target in targets if os.path.isfile(target)]
-        wildcards = [os.path.join(target, '*') for target in targets if
-                     os.path.isdir(target)]
-        fnmatches = (files + wildcards)
-        trimmed_fnmatches = [match.split(repo_base_dir + '/')[1] for match in
-                             fnmatches]
-        return re.compile('|'.join([fnmatch.translate(match)
-                                    for match in trimmed_fnmatches]))
-
+class TargetsPathAction(argparse.Action):
     def __call__(self, parser, namespace, values, option_string=None):
-        targets = [os.path.abspath(target) for target in values]
-        repo_base_dir = self._get_repo_base_dir(targets[0])
+        targets = [GitPathArg(target_path) for target_path in values]
+
+        repositories = [str(t.repository_base()) for t in targets]
+        if len(set(repositories)) > 1:
+            sys.exit("*** targets from multiple repositories %s" %
+                     set(repositories))
+        repo_base_dir = repositories[0]
         for target in targets:
-            self._assert_exists(target)
-            self._assert_under_dir(target, repo_base_dir)
-            self._assert_mode(target, os.R_OK)
+            target.assert_exists()
+            target.assert_under_directory(repo_base_dir)
+            target.assert_mode(os.R_OK)
+
+        target_strings = [str(target) for target in targets]
         namespace.repository = repo_base_dir
-        namespace.target_regex = self._compile_target_regex(repo_base_dir,
-                                                            targets)
+        namespace.target_regex = compile_target_regex(repo_base_dir,
+                                                      target_strings)
 
 
-class BinPathAction(PathAction):
-    def _assert_is_clang_format(self, path):
-        executable = os.path.basename(path)
-        if not is_clang_format_executable(executable):
-            sys.exit("*** %s is not a clang format binary." % path)
-
+class ExecutableBinaryAction(argparse.Action):
     def __call__(self, parser, namespace, values, option_string=None):
-        path = os.path.realpath(os.path.abspath(values))
-        self._assert_exists(path)
-        self._assert_mode(path, os.R_OK | os.X_OK)
-        self._assert_is_clang_format(path)
+        path = PathArg(values)
+        path.assert_exists()
+        path.assert_is_file()
+        path.assert_mode(os.R_OK | os.X_OK)
+
+        path.assert_has_filename("clang-format")
         version = get_clang_format_version(path)
         namespace.bin_path = path
         namespace.bin_version = version
 
 
-class StylePathAction(PathAction):
+class ReadableFileAction(argparse.Action):
     def __call__(self, parser, namespace, values, option_string=None):
-        path = os.path.abspath(values)
-        self._assert_exists(path)
-        self._assert_mode(path, os.R_OK)
+        path = PathArg(values)
+        path.assert_exists()
+        path.assert_is_file()
+        path.assert_mode(os.R_OK)
 
 
 ###############################################################################
@@ -533,10 +492,10 @@ class StylePathAction(PathAction):
 def get_clang_format_binaries():
     for path in os.environ["PATH"].split(os.pathsep):
         for e in os.listdir(path):
-            if is_clang_format_executable(e):
-                bin_path = os.path.realpath(os.path.join(path, e))
-                bin_version = get_clang_format_version(bin_path)
-                yield {'bin_path': bin_path, 'bin_version': bin_version}
+            binary = PathArg(os.path.join(path, e))
+            if binary.is_file() and binary.has_filename('clang-format'):
+                bin_version = get_clang_format_version(str(binary))
+                yield {'bin_path': str(binary), 'bin_version': bin_version}
 
 
 def locate_installed_binary():
@@ -588,12 +547,12 @@ if __name__ == "__main__":
               "(default=clang-format-[0-9]\.[0-9] installed in PATH with the "
               "highest version number)")
     parser.add_argument("-b", "--bin-path", type=str,
-                        action=BinPathAction, help=b_help)
+                        action=ExecutableBinaryAction, help=b_help)
     sf_help = ("The path to the style file to be used. (default=The "
                "src/.clang_format file of the repository which holds the "
                "targets)")
     parser.add_argument("-s", "--style-file", type=str,
-                        action=StylePathAction, help=sf_help)
+                        action=ReadableFileAction, help=sf_help)
     j_help = ("Parallel jobs for computing diffs. (default=6)")
     parser.add_argument("-j", "--jobs", type=int, default=6, help=j_help)
     f_help = ("Force proceeding with 'check' or 'format' if clang-format "
