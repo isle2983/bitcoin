@@ -14,7 +14,12 @@ import difflib
 import hashlib
 from multiprocessing import Pool
 from framework.report import Report
-from framework.path_arg import PathArg, GitPathArg
+from framework.path_arg import PathArg
+from framework.path_arg import GitPathArg
+from framework.action import ReadableFileAction
+from framework.action import TargetsAction
+from framework.clang import ClangFormatBinaryAction
+from framework.clang import ClangFind
 
 R = Report()
 
@@ -463,47 +468,6 @@ class TargetsPathAction(argparse.Action):
                                                       target_strings)
 
 
-class ExecutableBinaryAction(argparse.Action):
-    def __call__(self, parser, namespace, values, option_string=None):
-        path = PathArg(values)
-        path.assert_exists()
-        path.assert_is_file()
-        path.assert_mode(os.R_OK | os.X_OK)
-
-        path.assert_has_filename("clang-format")
-        version = get_clang_format_version(path)
-        namespace.bin_path = path
-        namespace.bin_version = version
-
-
-class ReadableFileAction(argparse.Action):
-    def __call__(self, parser, namespace, values, option_string=None):
-        path = PathArg(values)
-        path.assert_exists()
-        path.assert_is_file()
-        path.assert_mode(os.R_OK)
-
-
-###############################################################################
-# find installed clang-format binary
-###############################################################################
-
-
-def get_clang_format_binaries():
-    for path in os.environ["PATH"].split(os.pathsep):
-        for e in os.listdir(path):
-            binary = PathArg(os.path.join(path, e))
-            if binary.is_file() and binary.has_filename('clang-format'):
-                bin_version = get_clang_format_version(str(binary))
-                yield {'bin_path': str(binary), 'bin_version': bin_version}
-
-
-def locate_installed_binary():
-    installed = list(get_clang_format_binaries())
-    if len(installed) == 0:
-        sys.exit("*** could not locate a clang-format executable.")
-    return max(installed, key=lambda v: v['bin_version'])
-
 
 ###############################################################################
 # style file
@@ -547,7 +511,7 @@ if __name__ == "__main__":
               "(default=clang-format-[0-9]\.[0-9] installed in PATH with the "
               "highest version number)")
     parser.add_argument("-b", "--bin-path", type=str,
-                        action=ExecutableBinaryAction, help=b_help)
+                        action=ClangFormatBinaryAction, help=b_help)
     sf_help = ("The path to the style file to be used. (default=The "
                "src/.clang_format file of the repository which holds the "
                "targets)")
@@ -572,14 +536,14 @@ if __name__ == "__main__":
               "all files contained in it and its subdirectories are "
               "recursively selected. All targets must be tracked in the same "
               "git repository clone. (default=The current directory)")
-    parser.add_argument("target", type=str, action=TargetsPathAction,
-                        nargs='*', default='.', help=t_help)
+    parser.add_argument("target", type=str, action=TargetsAction,
+                        nargs='*', default=['.'], help=t_help)
     opts = parser.parse_args()
 
     # finish setting up parameters
-    if not opts.bin_path:
+    if not opts.clang_format_binary:
         installed = locate_installed_binary()
-        opts.bin_path = installed['bin_path']
+        opts.clang_format_binary = {} = installed['bin_path']
         opts.bin_version = installed['bin_version']
     else:
         opts.bin_version = get_clang_format_version(opts.bin_path)
