@@ -18,7 +18,7 @@ from framework.path_arg import PathArg
 from framework.path_arg import GitPathArg
 from framework.action import ReadableFileAction
 from framework.action import TargetsAction
-from framework.clang import ClangFormatBinaryAction
+from framework.clang import ClangDirectoryAction
 from framework.clang import ClangFind
 
 R = Report()
@@ -507,18 +507,18 @@ if __name__ == "__main__":
                    "of C++ code formatting in the repository. It produces "
                    "reports of style metrics and also can apply formatting.")
     parser = argparse.ArgumentParser(description=description)
-    b_help = ("The path to the clang-format binary to be used. "
-              "(default=clang-format-[0-9]\.[0-9] installed in PATH with the "
-              "highest version number)")
+    b_help = ("The path to the clang dirctory or binary to be used for "
+              "clang-format. (default=The clang-format installed in PATH with "
+              "the highest version number)")
     parser.add_argument("-b", "--bin-path", type=str,
-                        action=ClangFormatBinaryAction, help=b_help)
+                        action=ClangDirectoryAction, help=b_help)
     sf_help = ("The path to the style file to be used. (default=The "
                "src/.clang_format file of the repository which holds the "
                "targets)")
     parser.add_argument("-s", "--style-file", type=str,
                         action=ReadableFileAction, help=sf_help)
-    j_help = ("Parallel jobs for computing diffs. (default=6)")
-    parser.add_argument("-j", "--jobs", type=int, default=6, help=j_help)
+    j_help = ("Parallel jobs for computing diffs. (default=4)")
+    parser.add_argument("-j", "--jobs", type=int, default=4, help=j_help)
     f_help = ("Force proceeding with 'check' or 'format' if clang-format "
               "doesn't support all parameters in the style file. "
               "(default=False)")
@@ -541,12 +541,10 @@ if __name__ == "__main__":
     opts = parser.parse_args()
 
     # finish setting up parameters
-    if not opts.clang_format_binary:
-        installed = locate_installed_binary()
-        opts.clang_format_binary = {} = installed['bin_path']
-        opts.bin_version = installed['bin_version']
+    if opts.bin_path:
+        opts.clang_format_binary = opts.clang_executables['clang_format']
     else:
-        opts.bin_version = get_clang_format_version(opts.bin_path)
+        opts.clang_format_binary = ClangFind().best('clang-format')
     if not opts.style_file:
         opts.style_file = locate_repo_style_file(opts.repository)
     opts.style_params = parse_style_file(opts.style_file)

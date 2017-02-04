@@ -48,16 +48,17 @@ class TargetsAction(argparse.Action):
         types = [type(value) for value in values]
         if len(set(types)) != 1:
             os.exit("*** %s has multiple object types" % values)
-        if not isinstance(types[0], str):
+        if not isinstance(values[0], str):
             os.exit("*** %s does not contain strings" % values)
-        self.targets = [GitPathArg(value) for value in values]
-        for target in self.targets:
+        targets = [GitPathArg(value) for value in values]
+        for target in targets:
             target.assert_exists()
             target.assert_mode(os.R_OK)
         repositories = [str(target.repository_base()) for target in
-                        self.targets]
+                        targets]
         if len(set(repositories)) > 1:
             sys.exit("*** targets from multiple repositories %s" %
                      set(repositories))
-        for target in self.targets:
+        for target in targets:
             target.assert_under_directory(repositories[0])
+        namespace.repository = repositories[0]

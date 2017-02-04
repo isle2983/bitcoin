@@ -6,6 +6,7 @@
 import re
 import os
 import subprocess
+import argparse
 from framework.path_arg import PathArg
 from framework.action import ExecutableBinaryAction
 
@@ -76,6 +77,7 @@ class ClangFind(object):
         self.binaries = self._find_binaries(search_directories)
 
     def _parameter_directory(self, path_arg_str):
+        print(path_arg_str)
         p = PathArg(path_arg_str)
         p.assert_exists()
         # Tarball-download versions of clang put binaries in a bin/
@@ -84,8 +86,9 @@ class ClangFind(object):
         # <unpacked_tarball>/bin/<specific_binary>
         if p.is_file():
             return p.directory()
-        bin_subdir = os.path.join(str(p), "/bin/")
+        bin_subdir = os.path.join(str(p), "bin/")
         if os.path.exists(bin_subdir):
+            print("subdir %s\n" % bin_subdir)
             return bin_subdir
         return str(p)
 
@@ -112,27 +115,29 @@ class ClangFind(object):
                                                   'version': version})
         return binaries
 
-    def all(self, bin_name):
-        return self.binaries[bin_name]
+    def _highest_version(self, versions):
+        return max(versions, key=lambda b: b['version'])
+
+    def best_binaries(self):
+        return {name: self._highest_version(versions) for name, versions in
+                self.binaries.items()}
 
     def best(self, bin_name):
-        return max(self.all(bin_name), key=lambda b: b['version'])
+        return self.best_binaries()[bin_name]
 
 
 ###############################################################################
-# actions
+# action
 ###############################################################################
 
-class ClangFormatBinaryAction(ExecutableBinaryAction):
+class ClangDirectoryAction(argparse.Action):
     """
-    Validate that 'values' is a path that points to an executable clang-format
-    value. The version is also queried from the binary and added to the
-    namespace.
+    Validate that 'values' is a path that points to a directory that has
+    clang executables in it. The set of clang binaries contained is returned
+    along with their detected version. Tolerates either a directory, a
+    directory with a 'bin/' subdirectory or a path to an executable file.
     """
     def __call__(self, parser, namespace, values, option_string=None):
-        super(ClangFormatBinaryAction, self).__call__(
-            parser, namespace, values, option_string=option_string)
-        self.path.assert_has_filename("clang-format")
-        version = ClangVersion(self.path)
-        namespace.clang_format_binary = {'bin': self.path,
-                                         'version': str(version)}
+        if not isinstance(values, str):
+            os.exit("*** %s is not a string" % values)
+        namespace.clang_executables = ClangFind(values).best_binaries()
