@@ -6,7 +6,7 @@
 import os
 import argparse
 import subprocess
-from framework.path_arg import PathArg, GitPathArg
+from framework.path import Path, GitPath
 
 
 class ReadableFileAction(argparse.Action):
@@ -17,7 +17,7 @@ class ReadableFileAction(argparse.Action):
     def __call__(self, parser, namespace, values, option_string=None):
         if not isinstance(values, str):
             os.exit("*** %s is not a string" % values)
-        self.path = PathArg(values)
+        self.path = Path(values)
         self.path.assert_exists()
         self.path.assert_is_file()
         self.path.assert_mode(os.R_OK)
@@ -31,7 +31,7 @@ class ExecutableBinaryAction(argparse.Action):
     def __call__(self, parser, namespace, values, option_string=None):
         if not isinstance(values, str):
             os.exit("*** %s is not a string" % values)
-        self.path = PathArg(values)
+        self.path = Path(values)
         self.path.assert_exists()
         self.path.assert_is_file()
         self.path.assert_mode(os.R_OK | os.X_OK)
@@ -52,7 +52,7 @@ class TargetsAction(argparse.Action):
             os.exit("*** %s does not contain strings" % values)
 
     def _get_targets(self, values):
-        targets = [GitPathArg(value) for value in values]
+        targets = [GitPath(value) for value in values]
         for target in targets:
             target.assert_exists()
             target.assert_mode(os.R_OK)
@@ -68,15 +68,12 @@ class TargetsAction(argparse.Action):
         return repositories[0]
 
     def __call__(self, parser, namespace, values, option_string=None):
-
         self._check_values(values)
         targets = self._get_targets(values)
         namespace.repository = self._get_common_repository(targets)
-
         target_files = [os.path.join(namespace.repository, str(t)) for t in
                         targets if t.is_file()]
         target_directories = [os.path.join(namespace.repository, str(t)) for t
                               in targets if t.is_directory()]
-
         namespace.target_fnmatches = (target_files +
             [os.path.join(d, '*') for d in target_directories])

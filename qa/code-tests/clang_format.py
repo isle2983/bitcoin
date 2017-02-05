@@ -14,8 +14,6 @@ import difflib
 import hashlib
 from multiprocessing import Pool
 from framework.report import Report
-from framework.path_arg import PathArg
-from framework.path_arg import GitPathArg
 from framework.action import ReadableFileAction
 from framework.action import TargetsAction
 from framework.clang import ClangDirectoryAction
@@ -436,25 +434,6 @@ def compile_target_regex(repo_base_dir, targets):
     return re.compile('|'.join([fnmatch.translate(match)
                                 for match in trimmed_fnmatches]))
 
-
-class TargetsPathAction(argparse.Action):
-    def __call__(self, parser, namespace, values, option_string=None):
-        targets = [GitPathArg(target_path) for target_path in values]
-
-        repositories = [str(t.repository_base()) for t in targets]
-        if len(set(repositories)) > 1:
-            sys.exit("*** targets from multiple repositories %s" %
-                     set(repositories))
-        repo_base_dir = repositories[0]
-        for target in targets:
-            target.assert_exists()
-            target.assert_under_directory(repo_base_dir)
-            target.assert_mode(os.R_OK)
-
-        target_strings = [str(target) for target in targets]
-        namespace.repository = repo_base_dir
-        namespace.target_regex = compile_target_regex(repo_base_dir,
-                                                      target_strings)
 
 
 

@@ -7,11 +7,10 @@ import sys
 import os
 import subprocess
 
-
-class PathArg(object):
+class Path(object):
     """
     Base class for representing and validating command-line arguments that
-    are supposed to be a filesystem path with particular properties.
+    are strings but supposed to be a filesystem path with particular properties.
     """
     def __init__(self, path):
         self.path = self._get_real_path(str(path))
@@ -71,9 +70,9 @@ class PathArg(object):
         return self.containing_directory() if self.is_file() else self.path
 
 
-class GitPathArg(PathArg):
+class GitPath(Path):
     """
-    A PathArg that has some additional functions for awareness of the git
+    A Path that has some additional functions for awareness of the git
     repository that holds the path.
     """
     def _in_git_repository(self):
@@ -87,16 +86,16 @@ class GitPathArg(PathArg):
 
     def _is_repository_base(self):
         self.assert_is_directory()
-        return PathArg(os.path.join(self.path, '.git/')).exists()
+        return Path(os.path.join(self.path, '.git/')).exists()
 
     def repository_base(self):
-        directory = GitPathArg(self.directory())
+        directory = GitPath(self.directory())
         if directory._is_repository_base():
             return directory
 
         def recurse_repo_base_dir(git_path_arg):
             git_path_arg.assert_in_git_repository()
-            d = GitPathArg(git_path_arg.containing_directory())
+            d = GitPath(git_path_arg.containing_directory())
             if str(d) is '/':
                 sys.exit("*** did not find underlying repo?")
             if d._is_repository_base():

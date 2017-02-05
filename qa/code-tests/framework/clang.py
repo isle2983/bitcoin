@@ -7,7 +7,7 @@ import re
 import os
 import subprocess
 import argparse
-from framework.path_arg import PathArg
+from framework.path import Path
 from framework.action import ExecutableBinaryAction
 
 ###############################################################################
@@ -34,7 +34,7 @@ VERSION_PATH_REGEX = re.compile("(?P<version>[0-9]\.[0-9](\.[0-9])?)")
 
 class ClangVersion(object):
     def __init__(self, binary_path):
-        p = PathArg(binary_path)
+        p = Path(binary_path)
         if p.filename() in ASK_FOR_VERSION:
             self.version = self._version_from_asking(binary_path)
         else:
@@ -78,7 +78,7 @@ class ClangFind(object):
 
     def _parameter_directory(self, path_arg_str):
         print(path_arg_str)
-        p = PathArg(path_arg_str)
+        p = Path(path_arg_str)
         p.assert_exists()
         # Tarball-download versions of clang put binaries in a bin/
         # subdirectory. For convenience, tolerate a parameter of either:
@@ -95,7 +95,7 @@ class ClangFind(object):
     def _installed_directories(self):
         for path in os.environ["PATH"].split(os.pathsep):
             for e in os.listdir(path):
-                b = PathArg(os.path.join(path, e))
+                b = Path(os.path.join(path, e))
                 if b.is_file() and b.filename() in CLANG_BINARIES:
                     yield b.directory()
 
@@ -103,7 +103,7 @@ class ClangFind(object):
         binaries = {}
         for directory in search_directories:
             for binary in CLANG_BINARIES:
-                path = PathArg(os.path.join(directory, binary))
+                path = Path(os.path.join(directory, binary))
                 if not path.exists():
                     continue
                 path.assert_is_file()
@@ -127,7 +127,7 @@ class ClangFind(object):
 
 
 ###############################################################################
-# action
+# argparse action for a clang binary directory
 ###############################################################################
 
 class ClangDirectoryAction(argparse.Action):
