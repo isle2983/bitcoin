@@ -155,10 +155,17 @@ class ClangFormatStyle(object):
     invoking clang-format.
     """
     def __init__(self, file_path):
+        p = Path(file_path)
+        p.assert_exists()
+        p.assert_is_file()
+        p.assert_mode(os.R_OK)
         self.file_path = file_path
         self.raw_contents = read_file(file_path)
         self.parameters = self._parse_parameters()
         self.rejected_parameters = {}
+
+    def __str__(self):
+        return self.file_path
 
     def _parse_parameters(self):
         # Python does not have a built-in yaml parser, so here is a hand-written

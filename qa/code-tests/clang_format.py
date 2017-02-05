@@ -15,12 +15,12 @@ import hashlib
 from multiprocessing import Pool
 from framework.report import Report
 from framework.action import ReadableFileAction
-from framework.action import TargetsAction
 from framework.clang import ClangDirectoryAction
 from framework.clang import ClangFind
 from framework.clang import ClangFormat
 from framework.file_filter import FileFilter
 from framework.file import read_file, write_file
+from framework.git import GitTrackedTargetsAction
 
 R = Report()
 
@@ -48,52 +48,6 @@ def git_ls(opts):
     out = subprocess.check_output(GIT_LS_CMD.split(' '))
     return [os.path.join(opts.repository, f) for f in
             out.decode("utf-8").split('\n') if f != '']
-
-
-###############################################################################
-# obtain formatted file
-###############################################################################
-
-
-UNKNOWN_KEY_REGEX = re.compile("unknown key '(?P<key_name>\w+)'")
-
-
-def parse_unknown_key(err):
-    if len(err) == 0:
-        return 0, None
-    match = UNKNOWN_KEY_REGEX.search(err)
-    if not match:
-        return len(err), None
-    return len(err), match.group('key_name')
-
-
-def try_format_file(opts, filename):
-    cmd = [opts.clang_format_binary['path'], generate_style_arg(opts),
-           filename]
-    return subprocess.Popen(cmd, stdout=subprocess.PIPE,
-                            stderr=subprocess.PIPE)
-
-
-def format_file(opts, filename):
-    while True:
-        p = try_format_file(opts, filename)
-        out = p.stdout.read().decode('utf-8')
-        err = p.stderr.read().decode('utf-8')
-        p.communicate()
-        if p.returncode != 0:
-            sys.exit("*** clang-format could not execute")
-        # Older versions of clang don't support some style parameter keys, so
-        # we work around by redacting any key that gets rejected until we find
-        # a subset of parameters that can apply the format without producing
-        # any stderr output.
-        err_len, unknown_key = parse_unknown_key(err)
-        if not unknown_key and err_len > 0:
-            sys.exit("*** clang-format produced unknown output to stderr")
-        if unknown_key:
-            opts.style_params.pop(unknown_key)
-            opts.unknown_style_params.append(unknown_key)
-            continue
-        return out
 
 
 ###############################################################################
@@ -282,11 +236,9 @@ def print_report(opts, elapsed_time, file_infos, git_ls_list):
     R.separator()
     report_examined_files(opts, git_ls_list)
     R.separator()
-    R.add("clang-format bin:         %s\n" %
-          opts.clang_format.binary_path)
-    R.add("clang-format version:     %s\n" %
-          opts.clang_format.binary_version)
-    R.add("Using style in:           %s\n" % opts.style_file)
+    R.add("clang-format bin:         %s\n" % opts.clang_format.binary_path)
+    R.add("clang-format version:     %s\n" % opts.clang_format.binary_version)
+    R.add("Using style in:           %s\n" % opts.clang_format.style)
     report_if_parameters_unsupported(opts)
     R.separator()
     R.add("Parallel jobs for diffs:   %d\n" % opts.jobs)
@@ -383,18 +335,6 @@ def exec_format(opts):
 
 
 ###############################################################################
-# style file
-###############################################################################
-
-
-def locate_repo_style_file(repository):
-    path = os.path.join(repository, 'src/.clang-format')
-    if not os.path.exists(path):
-        sys.exit("*** no style file at: %s" % path)
-    return path
-
-
-###############################################################################
 # UI
 ###############################################################################
 
@@ -434,7 +374,7 @@ if __name__ == "__main__":
               "all files contained in it and its subdirectories are "
               "recursively selected. All targets must be tracked in the same "
               "git repository clone. (default=The current directory)")
-    parser.add_argument("target", type=str, action=TargetsAction,
+    parser.add_argument("target", type=str, action=GitTrackedTargetsAction,
                         nargs='*', default=['.'], help=t_help)
     opts = parser.parse_args()
 
@@ -443,7 +383,7 @@ if __name__ == "__main__":
               hasattr(opts, 'clang_executables') else
               ClangFind().best('clang-format'))
     style_path = (opts.style_file if opts.style_file else
-                  locate_repo_style_file(opts.repository))
+                  os.path.join(opts.repository, REPO_INFO['style_file']))
     opts.clang_format = ClangFormat(binary, style_path)
 
     # set up file filters

@@ -68,38 +68,3 @@ class Path(object):
 
     def directory(self):
         return self.containing_directory() if self.is_file() else self.path
-
-
-class GitPath(Path):
-    """
-    A Path that has some additional functions for awareness of the git
-    repository that holds the path.
-    """
-    def _in_git_repository(self):
-        cmd = 'git -C %s status' % self.directory()
-        dn = open(os.devnull, 'w')
-        return subprocess.call(cmd.split(' '), stderr=dn, stdout=dn) == 0;
-
-    def assert_in_git_repository(self):
-        if not self._in_git_repository():
-            sys.exit("*** %s is not inside a git repository" % self)
-
-    def _is_repository_base(self):
-        self.assert_is_directory()
-        return Path(os.path.join(self.path, '.git/')).exists()
-
-    def repository_base(self):
-        directory = GitPath(self.directory())
-        if directory._is_repository_base():
-            return directory
-
-        def recurse_repo_base_dir(git_path_arg):
-            git_path_arg.assert_in_git_repository()
-            d = GitPath(git_path_arg.containing_directory())
-            if str(d) is '/':
-                sys.exit("*** did not find underlying repo?")
-            if d._is_repository_base():
-                return d
-            return recurse_repo_base_dir(d)
-
-        return recurse_repo_base_dir(self)
