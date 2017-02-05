@@ -9,6 +9,20 @@ import subprocess
 import argparse
 from framework.path import Path
 
+
+class GitRepository(object):
+    def __init__(self, repository_base):
+        self.repository_base = repository_base
+
+    def __str__(self):
+        return self.repository_base
+
+    def tracked_files(self):
+        out = subprocess.check_output(['git', 'ls-files'])
+        return [os.path.join(self.repository_base, f) for f in
+                out.decode("utf-8").split('\n') if f != '']
+
+
 class GitPath(Path):
     """
     A Path that has some additional functions for awareness of the git
@@ -72,15 +86,16 @@ class GitTrackedTargetsAction(argparse.Action):
                      set(repositories))
         for target in targets:
             target.assert_under_directory(repositories[0])
-        return repositories[0]
+        return GitRepository(repositories[0])
 
     def __call__(self, parser, namespace, values, option_string=None):
         self._check_values(values)
         targets = self._get_targets(values)
         namespace.repository = self._get_common_repository(targets)
-        target_files = [os.path.join(namespace.repository, str(t)) for t in
-                        targets if t.is_file()]
-        target_directories = [os.path.join(namespace.repository, str(t)) for t
-                              in targets if t.is_directory()]
+
+        target_files = [os.path.join(str(namespace.repository), str(t)) for t
+                        in targets if t.is_file()]
+        target_directories = [os.path.join(str(namespace.repository), str(t))
+                              for t in targets if t.is_directory()]
         namespace.target_fnmatches = (target_files +
             [os.path.join(d, '*') for d in target_directories])

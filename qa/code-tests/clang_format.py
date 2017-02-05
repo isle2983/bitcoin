@@ -38,19 +38,6 @@ REPO_INFO = {
 }
 
 ###############################################################################
-# obtain list of files in repo to examine
-###############################################################################
-
-GIT_LS_CMD = 'git ls-files'
-
-
-def git_ls(opts):
-    out = subprocess.check_output(GIT_LS_CMD.split(' '))
-    return [os.path.join(opts.repository, f) for f in
-            out.decode("utf-8").split('\n') if f != '']
-
-
-###############################################################################
 # scoring
 ###############################################################################
 
@@ -174,8 +161,8 @@ def exit_if_parameters_unsupported(opts):
 
 
 def report_examined_files(opts, git_ls_list):
-    R.add("%4d files tracked according to '%s'\n" %
-          (len(git_ls_list), GIT_LS_CMD))
+    R.add("%4d files tracked in repo\n" %
+          (len(git_ls_list)))
     scope_list = [p for p in git_ls_list if opts.scope_filter.evaluate(p)]
     R.add("%4d files in scope according to SOURCE_FILES and ALWAYS_IGNORE "
           "settings\n" % len(scope_list))
@@ -261,7 +248,7 @@ def print_report(opts, elapsed_time, file_infos, git_ls_list):
 
 def exec_report(opts):
     start_time = time.time()
-    git_ls_list = git_ls(opts)
+    git_ls_list = opts.repository.tracked_files()
     file_infos = [gather_file_info(opts, filename) for filename in
                   git_ls_list if opts.target_filter.evaluate(filename)]
     file_infos = Pool(opts.jobs).map(compute_diff_info, file_infos)
@@ -383,26 +370,26 @@ if __name__ == "__main__":
               hasattr(opts, 'clang_executables') else
               ClangFind().best('clang-format'))
     style_path = (opts.style_file if opts.style_file else
-                  os.path.join(opts.repository, REPO_INFO['style_file']))
+                  os.path.join(str(opts.repository), REPO_INFO['style_file']))
     opts.clang_format = ClangFormat(binary, style_path)
 
     # set up file filters
     opts.scope_filter = FileFilter()
     opts.scope_filter.append_include(REPO_INFO['source_files'],
-                                     base_path=opts.repository)
+                                     base_path=str(opts.repository))
     opts.scope_filter.append_exclude(REPO_INFO['subtrees_to_ignore'],
-                                     base_path=opts.repository)
+                                     base_path=str(opts.repository))
 
     opts.target_filter = FileFilter()
     opts.target_filter.append_include(REPO_INFO['source_files'],
-                                      base_path=opts.repository)
+                                      base_path=str(opts.repository))
     opts.target_filter.append_exclude(REPO_INFO['subtrees_to_ignore'],
-                                      base_path=opts.repository)
+                                      base_path=str(opts.repository))
     opts.target_filter.append_include(opts.target_fnmatches,
-                                      base_path=opts.repository)
+                                      base_path=str(opts.repository))
 
     # execute commands
-    os.chdir(opts.repository)
+    os.chdir(str(opts.repository))
     if opts.subcommand == 'report':
         exec_report(opts)
     elif opts.subcommand == 'check':
