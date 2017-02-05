@@ -20,6 +20,7 @@ from framework.action import ReadableFileAction
 from framework.action import TargetsAction
 from framework.clang import ClangDirectoryAction
 from framework.clang import ClangFind
+from framework.file_filter import FileFilter
 
 R = Report()
 
@@ -29,9 +30,6 @@ R = Report()
 
 SOURCE_FILES = ['*.cpp', '*.h']
 
-SOURCE_FILES_COMPILED = re.compile('|'.join([fnmatch.translate(match)
-                                             for match in SOURCE_FILES]))
-
 ALWAYS_IGNORE = [
     # files in subtrees:
     'src/secp256k1/*',
@@ -40,9 +38,6 @@ ALWAYS_IGNORE = [
     'src/crypto/ctaes/*',
 ]
 
-ALWAYS_IGNORE_COMPILED = re.compile('|'.join([fnmatch.translate(match)
-                                              for match in ALWAYS_IGNORE]))
-
 ###############################################################################
 # obtain list of files in repo to examine
 ###############################################################################
@@ -50,19 +45,10 @@ ALWAYS_IGNORE_COMPILED = re.compile('|'.join([fnmatch.translate(match)
 GIT_LS_CMD = 'git ls-files'
 
 
-def git_ls():
+def git_ls(opts):
     out = subprocess.check_output(GIT_LS_CMD.split(' '))
-    return [f for f in out.decode("utf-8").split('\n') if f != '']
-
-
-def filename_is_to_be_examined(filename):
-    return (SOURCE_FILES_COMPILED.match(filename) and not
-            ALWAYS_IGNORE_COMPILED.match(filename))
-
-
-def get_filenames_in_scope(full_file_list):
-    return sorted([filename for filename in full_file_list if
-                   filename_is_to_be_examined(filename)])
+    return [os.path.join(opts.repository, f) for f in
+            out.decode("utf-8").split('\n') if f != '']
 
 
 ###############################################################################
@@ -106,7 +92,8 @@ def parse_unknown_key(err):
 
 
 def try_format_file(opts, filename):
-    cmd = [opts.bin_path, generate_style_arg(opts), filename]
+    cmd = [opts.clang_format_binary['path'], generate_style_arg(opts),
+           filename]
     return subprocess.Popen(cmd, stdout=subprocess.PIPE,
                             stderr=subprocess.PIPE)
 
@@ -255,13 +242,15 @@ def exit_if_parameters_unsupported(opts):
 ###############################################################################
 
 
-def report_examined_files(file_infos, in_scope_file_list, full_file_list):
+def report_examined_files(opts, git_ls_list):
     R.add("%4d files tracked according to '%s'\n" %
-          (len(full_file_list), GIT_LS_CMD))
+          (len(git_ls_list), GIT_LS_CMD))
+    scope_list = [p for p in git_ls_list if opts.scope_filter.evaluate(p)]
     R.add("%4d files in scope according to SOURCE_FILES and ALWAYS_IGNORE "
-          "settings\n" % len(in_scope_file_list))
+          "settings\n" % len(scope_list))
+    target_list = [p for p in git_ls_list if opts.target_filter.evaluate(p)]
     R.add("%4d files examined according to listed targets\n" %
-          len(file_infos))
+          len(target_list))
 
 
 def score_in_range_inclusive(score, lower, upper):
@@ -293,8 +282,7 @@ def report_slowest_diffs(file_infos):
                                     file_info['filename']))
 
 
-def print_report(opts, elapsed_time, file_infos, in_scope_file_list,
-                 full_file_list):
+def print_report(opts, elapsed_time, file_infos, git_ls_list):
     pre_format_lines = sum(file_info['pre_format_lines'] for file_info in
                            file_infos)
     added_lines = sum(file_info['added_lines'] for file_info in file_infos)
@@ -315,10 +303,12 @@ def print_report(opts, elapsed_time, file_infos, in_scope_file_list,
     formatted_md5 = h.hexdigest()
 
     R.separator()
-    report_examined_files(file_infos, in_scope_file_list, full_file_list)
+    report_examined_files(opts, git_ls_list)
     R.separator()
-    R.add("clang-format bin:         %s\n" % opts.bin_path)
-    R.add("clang-format version:     %s\n" % opts.bin_version)
+    R.add("clang-format bin:         %s\n" %
+          opts.clang_format_binary['path'])
+    R.add("clang-format version:     %s\n" %
+          opts.clang_format_binary['version'])
     R.add("Using style in:           %s\n" % opts.style_file)
     report_if_parameters_unsupported(opts)
     R.separator()
@@ -342,13 +332,12 @@ def print_report(opts, elapsed_time, file_infos, in_scope_file_list,
 
 def exec_report(opts):
     start_time = time.time()
-    full_file_list = git_ls()
-    in_scope_file_list = get_filenames_in_scope(full_file_list)
+    git_ls_list = git_ls(opts)
     file_infos = [gather_file_info(opts, filename) for filename in
-                  in_scope_file_list if opts.target_regex.match(filename)]
+                  git_ls_list if opts.target_filter.evaluate(filename)]
     file_infos = Pool(opts.jobs).map(compute_diff_info, file_infos)
-    print_report(opts, time.time() - start_time, file_infos,
-                 in_scope_file_list, full_file_list)
+
+    print_report(opts, time.time() - start_time, file_infos, git_ls_list)
 
 
 ###############################################################################
@@ -388,7 +377,7 @@ def print_check(opts, failures, file_infos, in_scope_file_list,
 
 
 def exec_check(opts):
-    full_file_list = git_ls()
+    full_file_list = git_ls(opts)
     in_scope_file_list = get_filenames_in_scope(full_file_list)
     file_infos = [gather_file_info(opts, filename) for filename in
                   in_scope_file_list if opts.target_regex.match(filename)]
@@ -406,7 +395,7 @@ def exec_check(opts):
 
 
 def exec_format(opts):
-    full_file_list = git_ls()
+    full_file_list = git_ls(opts)
     in_scope_file_list = get_filenames_in_scope(full_file_list)
     file_infos = [gather_file_info(opts, filename) for filename in
                   in_scope_file_list if opts.target_regex.match(filename)]
@@ -540,15 +529,28 @@ if __name__ == "__main__":
                         nargs='*', default=['.'], help=t_help)
     opts = parser.parse_args()
 
-    # finish setting up parameters
-    if opts.bin_path:
-        opts.clang_format_binary = opts.clang_executables['clang_format']
+    # finish finding clang-format binary
+    if opts.clang_executables:
+        opts.clang_format_binary = opts.clang_executables['clang-format']
     else:
         opts.clang_format_binary = ClangFind().best('clang-format')
+
+    # find and parse style file
     if not opts.style_file:
         opts.style_file = locate_repo_style_file(opts.repository)
     opts.style_params = parse_style_file(opts.style_file)
     opts.unknown_style_params = []
+
+    # set up file filters
+    opts.scope_filter = FileFilter()
+    opts.scope_filter.append_include(SOURCE_FILES, base_path=opts.repository)
+    opts.scope_filter.append_exclude(ALWAYS_IGNORE, base_path=opts.repository)
+
+    opts.target_filter = FileFilter()
+    opts.target_filter.append_include(SOURCE_FILES, base_path=opts.repository)
+    opts.target_filter.append_exclude(ALWAYS_IGNORE, base_path=opts.repository)
+    opts.target_filter.append_include(opts.target_fnmatches,
+                                      base_path=opts.repository)
 
     # execute commands
     os.chdir(opts.repository)
