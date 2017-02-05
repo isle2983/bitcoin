@@ -18,7 +18,9 @@ from framework.action import ReadableFileAction
 from framework.action import TargetsAction
 from framework.clang import ClangDirectoryAction
 from framework.clang import ClangFind
+from framework.clang import ClangFormat
 from framework.file_filter import FileFilter
+from framework.file import read_file, write_file
 
 R = Report()
 
@@ -26,15 +28,14 @@ R = Report()
 # settings for the set of files that this applies to
 ###############################################################################
 
-SOURCE_FILES = ['*.cpp', '*.h']
-
-ALWAYS_IGNORE = [
-    # files in subtrees:
-    'src/secp256k1/*',
-    'src/leveldb/*',
-    'src/univalue/*',
-    'src/crypto/ctaes/*',
-]
+REPO_INFO = {
+    'source_files':       ['*.cpp', '*.h'],
+    'subtrees_to_ignore': ['src/secp256k1/*',
+                           'src/leveldb/*',
+                           'src/univalue/*',
+                           'src/crypto/ctaes/*'],
+    'style_file':         'src/.clang-format',
+}
 
 ###############################################################################
 # obtain list of files in repo to examine
@@ -50,31 +51,8 @@ def git_ls(opts):
 
 
 ###############################################################################
-# file IO
-###############################################################################
-
-
-def read_file(filename):
-    file = open(os.path.abspath(filename), 'r')
-    contents = file.read()
-    file.close()
-    return contents
-
-
-def write_file(filename, contents):
-    file = open(os.path.abspath(filename), 'w')
-    file.write(contents)
-    file.close()
-
-
-###############################################################################
 # obtain formatted file
 ###############################################################################
-
-
-def generate_style_arg(opts):
-    return '-style={%s}' % ', '.join(["%s: %s" % (k, v) for k, v in
-                                      opts.style_params.items()])
 
 
 UNKNOWN_KEY_REGEX = re.compile("unknown key '(?P<key_name>\w+)'")
@@ -169,7 +147,7 @@ def gather_file_info(opts, filename):
     file_info = {}
     file_info['filename'] = filename
     file_info['contents'] = read_file(filename)
-    file_info['formatted'] = format_file(opts, filename)
+    file_info['formatted'] = opts.clang_format.read_formatted_file(filename)
     file_info['matching'] = (file_info['contents'] == file_info['formatted'])
     file_info['formatted_md5'] = (
         hashlib.md5(file_info['formatted'].encode('utf-8')).hexdigest())
@@ -203,13 +181,14 @@ def compute_diff_info(file_info):
 
 
 def report_if_parameters_unsupported(opts):
-    if len(opts.unknown_style_params) == 0:
+    rejected = opts.clang_format.rejected_parameters()
+    if len(rejected) == 0:
         return
     R.separator()
     R.add_red("WARNING")
     R.add(" - This version of clang-format does not support the "
           "following style\nparameters, so they were not used:\n\n")
-    for param in opts.unknown_style_params:
+    for param in rejected:
         R.add("%s\n" % param)
 
 
@@ -304,9 +283,9 @@ def print_report(opts, elapsed_time, file_infos, git_ls_list):
     report_examined_files(opts, git_ls_list)
     R.separator()
     R.add("clang-format bin:         %s\n" %
-          opts.clang_format_binary['path'])
+          opts.clang_format.binary_path)
     R.add("clang-format version:     %s\n" %
-          opts.clang_format_binary['version'])
+          opts.clang_format.binary_version)
     R.add("Using style in:           %s\n" % opts.style_file)
     report_if_parameters_unsupported(opts)
     R.separator()
@@ -404,40 +383,6 @@ def exec_format(opts):
 
 
 ###############################################################################
-# parse version
-###############################################################################
-
-
-VERSION_REGEX = re.compile("version (?P<version>[0-9]\.[0-9](\.[0-9])?)")
-
-
-def get_clang_format_version(bin_path):
-    p = subprocess.Popen([bin_path, '--version'], stdout=subprocess.PIPE)
-    match = VERSION_REGEX.search(p.stdout.read().decode('utf-8'))
-    if not match:
-        return "(unknown version)"
-    return match.group('version')
-
-
-###############################################################################
-# validate inputs
-###############################################################################
-
-
-def compile_target_regex(repo_base_dir, targets):
-    files = [target for target in targets if os.path.isfile(str(target))]
-    wildcards = [os.path.join(target, '*') for target in targets if
-                 os.path.isdir(target)]
-    fnmatches = (files + wildcards)
-    trimmed_fnmatches = [match.split(repo_base_dir + '/')[1] for match in
-                         fnmatches]
-    return re.compile('|'.join([fnmatch.translate(match)
-                                for match in trimmed_fnmatches]))
-
-
-
-
-###############################################################################
 # style file
 ###############################################################################
 
@@ -447,21 +392,6 @@ def locate_repo_style_file(repository):
     if not os.path.exists(path):
         sys.exit("*** no style file at: %s" % path)
     return path
-
-
-def parse_style_file(style_file):
-    # Python does not have a built-in yaml parser, so here is a hand-written
-    # one that *seems* to minimally work for this purpose.
-    contents = read_file(style_file)
-    # remove spaces after colon
-    many_spaces = re.compile(': +')
-    spaces_removed = many_spaces.sub(':', contents)
-    # split into a list of lines
-    lines = [l for l in spaces_removed.split('\n') if l != '']
-    # split by the colon separator
-    split = [l.split(':') for l in lines]
-    # present as a dictionary
-    return {item[0]: ''.join(item[1:]) for item in split}
 
 
 ###############################################################################
@@ -508,26 +438,26 @@ if __name__ == "__main__":
                         nargs='*', default=['.'], help=t_help)
     opts = parser.parse_args()
 
-    # finish finding clang-format binary
-    if opts.clang_executables:
-        opts.clang_format_binary = opts.clang_executables['clang-format']
-    else:
-        opts.clang_format_binary = ClangFind().best('clang-format')
-
-    # find and parse style file
-    if not opts.style_file:
-        opts.style_file = locate_repo_style_file(opts.repository)
-    opts.style_params = parse_style_file(opts.style_file)
-    opts.unknown_style_params = []
+    # find clang-format binary and style
+    binary = (opts.clang_executables['clang-format'] if
+              hasattr(opts, 'clang_executables') else
+              ClangFind().best('clang-format'))
+    style_path = (opts.style_file if opts.style_file else
+                  locate_repo_style_file(opts.repository))
+    opts.clang_format = ClangFormat(binary, style_path)
 
     # set up file filters
     opts.scope_filter = FileFilter()
-    opts.scope_filter.append_include(SOURCE_FILES, base_path=opts.repository)
-    opts.scope_filter.append_exclude(ALWAYS_IGNORE, base_path=opts.repository)
+    opts.scope_filter.append_include(REPO_INFO['source_files'],
+                                     base_path=opts.repository)
+    opts.scope_filter.append_exclude(REPO_INFO['subtrees_to_ignore'],
+                                     base_path=opts.repository)
 
     opts.target_filter = FileFilter()
-    opts.target_filter.append_include(SOURCE_FILES, base_path=opts.repository)
-    opts.target_filter.append_exclude(ALWAYS_IGNORE, base_path=opts.repository)
+    opts.target_filter.append_include(REPO_INFO['source_files'],
+                                      base_path=opts.repository)
+    opts.target_filter.append_exclude(REPO_INFO['subtrees_to_ignore'],
+                                      base_path=opts.repository)
     opts.target_filter.append_include(opts.target_fnmatches,
                                       base_path=opts.repository)
 

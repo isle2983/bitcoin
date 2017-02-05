@@ -9,6 +9,7 @@ import subprocess
 import argparse
 from framework.path import Path
 from framework.action import ExecutableBinaryAction
+from framework.file import read_file, write_file
 
 ###############################################################################
 # The clang binaries of interest to this framework
@@ -141,3 +142,83 @@ class ClangDirectoryAction(argparse.Action):
         if not isinstance(values, str):
             os.exit("*** %s is not a string" % values)
         namespace.clang_executables = ClangFind(values).best_binaries()
+
+
+###############################################################################
+# clang-format classes
+###############################################################################
+
+class ClangFormatStyle(object):
+    """
+    Reads and parses a .clang-format style file to represent it. The style can
+    have keys removed and it can be translated into a '--style' argument for
+    invoking clang-format.
+    """
+    def __init__(self, file_path):
+        self.file_path = file_path
+        self.raw_contents = read_file(file_path)
+        self.parameters = self._parse_parameters()
+        self.rejected_parameters = {}
+
+    def _parse_parameters(self):
+        # Python does not have a built-in yaml parser, so here is a hand-written
+        # one that *seems* to minimally work for this purpose.
+        many_spaces = re.compile(': +')
+        spaces_removed = many_spaces.sub(':', self.raw_contents)
+        # split into a list of lines
+        lines = [l for l in spaces_removed.split('\n') if l != '']
+        # split by the colon separator
+        split = [l.split(':') for l in lines]
+        # present as a dictionary
+        return {item[0]: ''.join(item[1:]) for item in split}
+
+    def reject_parameter(self, key):
+        self.rejected_parameters[key] = self.parameters.pop(key)
+
+    def style_arg(self):
+        return '-style={%s}' % ', '.join(["%s: %s" % (k, v) for k, v in
+                                          self.parameters.items()])
+
+
+class ClangFormat(object):
+    def __init__(self, binary, style_path):
+        self.binary_path = binary['path']
+        self.binary_version = binary['version']
+        self.style = ClangFormatStyle(style_path)
+        self.UNKNOWN_KEY_REGEX = re.compile("unknown key '(?P<key_name>\w+)'")
+
+    def _parse_unknown_key(self, err):
+        if len(err) == 0:
+            return 0, None
+        match = self.UNKNOWN_KEY_REGEX.search(err)
+        if not match:
+            return len(err), None
+        return len(err), match.group('key_name')
+
+    def _try_format_file(self, file_path):
+        cmd = [self.binary_path, self.style.style_arg(), file_path]
+        return subprocess.Popen(cmd, stdout=subprocess.PIPE,
+                                stderr=subprocess.PIPE)
+
+    def read_formatted_file(self, file_path):
+        while True:
+            p = self._try_format_file(file_path)
+            out = p.stdout.read().decode('utf-8')
+            err = p.stderr.read().decode('utf-8')
+            p.communicate()
+            if p.returncode != 0:
+                sys.exit("*** clang-format could not execute")
+            # Older versions of clang don't support some style parameter keys,
+            # so we work around by redacting any key that gets rejected until
+            # we find a subset of parameters that can apply the format without
+            # producing any stderr output.
+            err_len, unknown_key = self._parse_unknown_key(err)
+            if not unknown_key and err_len > 0:
+                sys.exit("*** clang-format produced unknown output to stderr")
+            if unknown_key:
+                self.style.reject_parameter(unknown_key)
+                continue
+            return out
+
+    def rejected_parameters(self):
+        return self.style.rejected_parameters
