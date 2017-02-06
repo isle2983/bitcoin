@@ -21,6 +21,7 @@ from framework.clang import ClangFormat
 from framework.file_filter import FileFilter
 from framework.file import read_file, write_file
 from framework.git import GitTrackedTargetsAction
+from framework.file_info import FileInfo, FileInfos
 
 R = Report()
 
@@ -41,79 +42,85 @@ REPO_INFO = {
 # scoring
 ###############################################################################
 
+class StyleScore(object):
+    """
+    A crude calculation to give a percentage rating for adherence to the
+    defined style.
+    """
+    def __init__(self, pre_format, unchanged, added, removed, post_format):
+        self.pre_format = pre_format
+        self.unchanged = unchanged
+        self.added = added
+        self.removed = removed
+        self.post_format = post_format
+        self.score = (100.00 if (added + removed) == 0 else
+                      min(abs(1.0 - (float(pre_format - unchanged) /
+                                     float(pre_format))) * 100, 99.00))
 
-def style_score(pre_format, unchanged, added, removed):
-    # A crude calculation to give a percentage rating for adherence to the
-    # defined style.
-    if (added + removed) == 0:
-        return 100
-    return min(int(abs(1 - (float(pre_format - unchanged) /
-                            float(pre_format))) * 100), 99)
-
-
-def scoreboard(score, pre_format, added, removed, unchanged, post_format):
-    return (" +-------+          +------------+--------+---------+-----------+"
-            "-------------+\n"
-            " | score |          | pre-format |  added | removed | unchanged |"
-            " post-format |\n"
-            " +-------+  +-------+------------+--------+---------+-----------+"
-            "-------------+\n"
-            " | %3d%%  |  | lines | %10d | %6d | %7d | %9d | %11d |\n"
-            " +-------+  +-------+------------+--------+---------+-----------+"
-            "-------------+\n" % (score, pre_format, added, removed,
-                                  unchanged, post_format))
+    def __str__(self):
+        return (" +-------+          +------------+--------+---------+--------"
+                "---+-------------+\n"
+                " | score |          | pre-format |  added | removed | unchang"
+                "ed | post-format |\n"
+                " +-------+  +-------+------------+--------+---------+--------"
+                "---+-------------+\n"
+                " | %3d%%  |  | lines | %10d | %6d | %7d | %9d | %11d |\n"
+                " +-------+  +-------+------------+--------+---------+--------"
+                "---+-------------+\n" % (self.score, self.pre_format,
+                                          self.added, self.removed,
+                                          self.unchanged, self.post_format))
+    def __float__(self):
+        return self.score
 
 
 ###############################################################################
 # gather file and diff info
 ###############################################################################
 
-
-def classify_diff_lines(diff):
-    for l in diff:
-        if l.startswith('  '):
-            yield 1, 0, 0
-        elif l.startswith('+ '):
-            yield 0, 1, 0
-        elif l.startswith('- '):
-            yield 0, 0, 1
-
-
-def sum_lines_of_type(diff):
-    return (sum(c) for c in zip(*classify_diff_lines(diff)))
-
-
-def gather_file_info(opts, filename):
-    start = time.time()
-    file_info = {}
-    file_info['filename'] = filename
-    file_info['contents'] = read_file(filename)
-    file_info['formatted'] = opts.clang_format.read_formatted_file(filename)
-    file_info['matching'] = (file_info['contents'] == file_info['formatted'])
-    file_info['formatted_md5'] = (
-        hashlib.md5(file_info['formatted'].encode('utf-8')).hexdigest())
-    return file_info
-
-
 DIFFER = difflib.Differ()
 
+class ClangFormatFileInfo(FileInfo):
+    def __init__(self, repository, file_path, clang_format):
+        super().__init__(repository, file_path)
+        self.clang_format = clang_format
 
-def compute_diff_info(file_info):
-    pre_format_lines = file_info['contents'].splitlines()
-    post_format_lines = file_info['formatted'].splitlines()
-    file_info['pre_format_lines'] = len(pre_format_lines)
-    file_info['post_format_lines'] = len(post_format_lines)
-    start_time = time.time()
-    diff = DIFFER.compare(pre_format_lines, post_format_lines)
-    (file_info['unchanged_lines'],
-     file_info['added_lines'],
-     file_info['removed_lines']) = sum_lines_of_type(diff)
-    file_info['diff_time'] = time.time() - start_time
-    file_info['score'] = style_score(file_info['pre_format_lines'],
-                                     file_info['unchanged_lines'],
-                                     file_info['added_lines'],
-                                     file_info['removed_lines'])
-    return file_info
+    def read(self):
+        super().read()
+        self['formatted'] = (
+            self.clang_format.read_formatted_file(self['file_path']))
+
+    def _sum_lines_of_type(self, diff):
+        def classify_diff_lines(diff):
+            for l in diff:
+                if l.startswith('  '):
+                    yield 1, 0, 0
+                elif l.startswith('+ '):
+                    yield 0, 1, 0
+                elif l.startswith('- '):
+                    yield 0, 0, 1
+
+        return (sum(c) for c in zip(*classify_diff_lines(diff)))
+
+    def compute(self):
+        start_time = time.time()
+        self.set_write_content(self['formatted'])
+        self['matching'] = self['content'] == self['formatted']
+        self['formatted_md5'] = (
+            hashlib.md5(self['formatted'].encode('utf-8')).hexdigest())
+        pre_format_lines = self['content'].splitlines()
+        post_format_lines = self['formatted'].splitlines()
+        self['pre_format_lines'] = len(pre_format_lines)
+        self['post_format_lines'] = len(post_format_lines)
+        diff = DIFFER.compare(pre_format_lines, post_format_lines)
+        (self['unchanged_lines'],
+         self['added_lines'],
+         self['removed_lines']) = self._sum_lines_of_type(diff)
+        self['score'] = StyleScore(self['pre_format_lines'],
+                                   self['unchanged_lines'],
+                                   self['added_lines'],
+                                   self['removed_lines'],
+                                   self['post_format_lines'])
+        self['compute_time'] = time.time() - start_time
 
 
 ###############################################################################
@@ -172,7 +179,7 @@ def report_examined_files(opts, git_ls_list):
 
 
 def score_in_range_inclusive(score, lower, upper):
-    return (score >= lower) and (score <= upper)
+    return (float(score) >= lower) and (float(score) <= upper)
 
 
 def report_files_in_range(file_infos, lower, upper):
@@ -191,12 +198,12 @@ def report_files_in_ranges(file_infos):
 
 def report_slowest_diffs(file_infos):
     slowest = [file_info for file_info in file_infos if
-               file_info['diff_time'] > 1.0]
+               file_info['compute_time'] > 1.0]
     if len(slowest) == 0:
         return
     R.add("Slowest diffs:\n")
     for file_info in slowest:
-        R.add("%6.02fs for %s\n" % (file_info['diff_time'],
+        R.add("%6.02fs for %s\n" % (file_info['compute_time'],
                                     file_info['filename']))
 
 
@@ -209,8 +216,9 @@ def print_report(opts, elapsed_time, file_infos, git_ls_list):
                           file_infos)
     post_format_lines = sum(file_info['post_format_lines'] for file_info in
                             file_infos)
-    score = style_score(pre_format_lines, unchanged_lines, added_lines,
-                        removed_lines)
+    style_score = StyleScore(pre_format_lines, unchanged_lines, added_lines,
+                             removed_lines, post_format_lines)
+
     matching = [file_info for file_info in file_infos if
                 file_info['matching']]
     not_matching = [file_info for file_info in file_infos if not
@@ -239,21 +247,30 @@ def print_report(opts, elapsed_time, file_infos, git_ls_list):
     report_files_in_ranges(file_infos)
     R.separator()
     R.add("\n")
-    R.add(scoreboard(score, pre_format_lines, added_lines, removed_lines,
-                     unchanged_lines, post_format_lines))
+    R.add(str(style_score))
     R.add("\n")
     R.separator()
     R.flush()
 
+def file_info_iter(repository, tracked_files, target_filter, clang_format):
+    for file_path in tracked_files:
+        if target_filter.evaluate(file_path):
+            yield ClangFormatFileInfo(repository, file_path, clang_format)
 
 def exec_report(opts):
     start_time = time.time()
-    git_ls_list = opts.repository.tracked_files()
-    file_infos = [gather_file_info(opts, filename) for filename in
-                  git_ls_list if opts.target_filter.evaluate(filename)]
-    file_infos = Pool(opts.jobs).map(compute_diff_info, file_infos)
 
-    print_report(opts, time.time() - start_time, file_infos, git_ls_list)
+    tracked_files = opts.repository.tracked_files()
+
+    file_infos = FileInfos(opts.jobs,
+                           file_info_iter(opts.repository, tracked_files,
+                                          opts.target_filter,
+                                          opts.clang_format))
+
+    file_infos.read_all()
+    file_infos.compute_all()
+
+    print_report(opts, time.time() - start_time, file_infos, tracked_files)
 
 
 ###############################################################################
