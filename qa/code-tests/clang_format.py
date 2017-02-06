@@ -53,19 +53,19 @@ class StyleScore(object):
         self.added = added
         self.removed = removed
         self.post_format = post_format
-        self.score = (100.00 if (added + removed) == 0 else
+        self.score = (100.0 if (added + removed) == 0 else
                       min(abs(1.0 - (float(pre_format - unchanged) /
-                                     float(pre_format))) * 100, 99.00))
+                                     float(pre_format))) * 100, 99.0))
 
     def __str__(self):
-        return (" +-------+          +------------+--------+---------+--------"
+        return (" +-------+         +------------+--------+---------+--------"
                 "---+-------------+\n"
-                " | score |          | pre-format |  added | removed | unchang"
+                " | score |         | pre-format |  added | removed | unchang"
                 "ed | post-format |\n"
-                " +-------+  +-------+------------+--------+---------+--------"
+                " +-------+ +-------+------------+--------+---------+--------"
                 "---+-------------+\n"
-                " | %3d%%  |  | lines | %10d | %6d | %7d | %9d | %11d |\n"
-                " +-------+  +-------+------------+--------+---------+--------"
+                " | %3.2f%%| | lines | %10d | %6d | %7d | %9d | %11d |\n"
+                " +-------+ +-------+------------+--------+---------+--------"
                 "---+-------------+\n" % (self.score, self.pre_format,
                                           self.added, self.removed,
                                           self.unchanged, self.post_format))
@@ -102,7 +102,6 @@ class ClangFormatFileInfo(FileInfo):
         return (sum(c) for c in zip(*classify_diff_lines(diff)))
 
     def compute(self):
-        start_time = time.time()
         self.set_write_content(self['formatted'])
         self['matching'] = self['content'] == self['formatted']
         self['formatted_md5'] = (
@@ -111,6 +110,7 @@ class ClangFormatFileInfo(FileInfo):
         post_format_lines = self['formatted'].splitlines()
         self['pre_format_lines'] = len(pre_format_lines)
         self['post_format_lines'] = len(post_format_lines)
+        start_time = time.time()
         diff = DIFFER.compare(pre_format_lines, post_format_lines)
         (self['unchanged_lines'],
          self['added_lines'],
@@ -120,7 +120,7 @@ class ClangFormatFileInfo(FileInfo):
                                    self['added_lines'],
                                    self['removed_lines'],
                                    self['post_format_lines'])
-        self['compute_time'] = time.time() - start_time
+        self['diff_time'] = time.time() - start_time
 
 
 ###############################################################################
@@ -129,7 +129,7 @@ class ClangFormatFileInfo(FileInfo):
 
 
 def report_if_parameters_unsupported(opts):
-    rejected = opts.clang_format.rejected_parameters()
+    rejected = opts.clang_format.style.rejected_parameters
     if len(rejected) == 0:
         return
     R.separator()
@@ -198,12 +198,12 @@ def report_files_in_ranges(file_infos):
 
 def report_slowest_diffs(file_infos):
     slowest = [file_info for file_info in file_infos if
-               file_info['compute_time'] > 1.0]
+               file_info['diff_time'] > 1.0]
     if len(slowest) == 0:
         return
     R.add("Slowest diffs:\n")
     for file_info in slowest:
-        R.add("%6.02fs for %s\n" % (file_info['compute_time'],
+        R.add("%6.02fs for %s\n" % (file_info['diff_time'],
                                     file_info['filename']))
 
 
@@ -339,6 +339,58 @@ def exec_format(opts):
 
 
 ###############################################################################
+# 'format' subcommand execution
+###############################################################################
+
+
+class ClangFormatOps(object):
+    def __init__(self, repository, clang_format, style_file, jobs,
+                 target_fnmatches):
+        self.repository = repository
+        self.clang_format = clang_format
+        self.style_file = style_file
+        self.jobs = jobs
+        self.tracked_files = self._get_tracked_files(self.repository)
+        self.files_in_scope = list(self._files_in_scope(self.repository,
+                                                        self.tracked_files))
+        self.files_targeted = list(self._files_targeted(self.repository,
+                                                        self.files_in_scope,
+                                                        target_fnmatches))
+
+    def _get_tracked_files(self, repository):
+        return repository.tracked_files()
+
+    def _scope_filter(self, repository):
+        file_filter = FileFilter()
+        file_filter.append_include(REPO_INFO['source_files'],
+                                   base_path=str(repository))
+        file_filter.append_exclude(REPO_INFO['subtrees_to_ignore'],
+                                   base_path=str(repository))
+        return file_filter
+
+    def _files_in_scope(self, repository, tracked_files):
+        file_filter = self._scope_filter(repository)
+        return (f for f in tracked_files if file_filter.evaluate(f))
+
+    def _target_filter(self, repository, target_fnmatches):
+        file_filter = self._scope_filter(repository)
+        file_filter.append_include(target_fnmatches, base_path=repository)
+        return file_filter
+
+    def _files_targeted(self, repository, tracked_files, target_fnmatches):
+        file_filter = self._target_filter(repository, target_fnmatches)
+        return (f for f in tracked_files if file_filter.evaluate(f))
+
+    def report(self):
+        pass
+
+    def check(self, force=False):
+        pass
+
+    def format(self, force=False):
+        pass
+
+###############################################################################
 # UI
 ###############################################################################
 
@@ -404,9 +456,9 @@ if __name__ == "__main__":
                                       base_path=str(opts.repository))
     opts.target_filter.append_include(opts.target_fnmatches,
                                       base_path=str(opts.repository))
-
+    ops = ClangFormatOps(opts.repository, opts.clang_format, opts.style_file,
+                         opts.jobs, opts.target_fnmatches)
     # execute commands
-    os.chdir(str(opts.repository))
     if opts.subcommand == 'report':
         exec_report(opts)
     elif opts.subcommand == 'check':

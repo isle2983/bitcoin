@@ -180,7 +180,8 @@ class ClangFormatStyle(object):
         return {item[0]: ''.join(item[1:]) for item in split}
 
     def reject_parameter(self, key):
-        self.rejected_parameters[key] = self.parameters.pop(key)
+        if key not in self.rejected_parameters:
+            self.rejected_parameters[key] = self.parameters.pop(key)
 
     def style_arg(self):
         return '-style={%s}' % ', '.join(["%s: %s" % (k, v) for k, v in

@@ -8,8 +8,15 @@ import os
 from multiprocessing import Pool
 from framework.file import read_file, write_file
 
+###############################################################################
+# single file
+###############################################################################
 
 class FileInfo(dict):
+    """
+    Superclass to represent a file, its contents, and computed information
+    about the file.
+    """
     def __init__(self, repository, file_path):
         super().__init__()
         self['repository'] = repository
@@ -19,6 +26,9 @@ class FileInfo(dict):
     def read(self):
         self['content'] = read_file(self['file_path'])
 
+    def compute(self):
+        sys.exit("*** 'compute' function must be redefined by subclass")
+
     def set_write_content(self, contents):
         self['write_content'] = contents
 
@@ -26,10 +36,9 @@ class FileInfo(dict):
         write_file(self['file_path'], self['write_content'])
 
 
-def read_file_info(file_info):
-    file_info.read()
-    return file_info
-
+###############################################################################
+# a set of files
+###############################################################################
 
 def compute_file_info(file_info):
     file_info.compute()
@@ -37,6 +46,10 @@ def compute_file_info(file_info):
 
 
 class FileInfos(object):
+    """
+    A container for a set of files which can do the computing of the file
+    info in parallel.
+    """
     def __init__(self, jobs, file_info_iter):
         self.jobs = jobs
         self.pool = Pool(jobs)
@@ -47,7 +60,11 @@ class FileInfos(object):
             yield file_info
 
     def read_all(self):
-        self.file_info_list = self.pool.map(read_file_info, self)
+        # read in serial - this is better for some VM environments that can't
+        # gracefully schedule parallel, high-throughput file I/O
+        for file_info in self.file_info_list:
+            file_info.read()
 
     def compute_all(self):
+        # compute in parallel
         self.file_info_list = self.pool.map(compute_file_info, self)
