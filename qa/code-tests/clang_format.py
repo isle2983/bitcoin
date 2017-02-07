@@ -310,8 +310,12 @@ class FileContentCmd(object):
     def _json_print(self):
         print(json.dumps(self.results))
 
+    def _write_files(self):
+        pass
+
     def exec(self):
         self._read_and_compute_file_infos()
+        self._write_files()
         self.results = self._analysis()
         self._json_print() if self.json else self._human_print()
 
@@ -427,9 +431,8 @@ class CheckCmd(FileContentCmd):
             r.add_green("No format issues found!\n")
         else:
             r.add_red("These files can be auto-formatted by running:\n\n")
-            r.add("$ %s format %s\n" % (
-                self.clang_format.binary_path,
-                ' '.join(f['file_path'] for f in a['failures'])))
+            r.add("$ clang_format.py format %s\n" %
+                  ' '.join(f['file_path'] for f in a['failures']))
         r.separator()
         r.flush()
 
@@ -440,6 +443,13 @@ class FormatCmd(FileContentCmd):
 
     def _human_print(self):
         pass
+
+    def _json_print(self):
+        pass
+
+    def _write_files(self):
+        self.file_infos.write_all()
+
 
 ###############################################################################
 # UI
