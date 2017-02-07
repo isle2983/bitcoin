@@ -12,6 +12,7 @@ import re
 import fnmatch
 import difflib
 import hashlib
+import json
 from multiprocessing import Pool
 from framework.report import Report
 from framework.action import ReadableFileAction
@@ -30,12 +31,13 @@ R = Report()
 ###############################################################################
 
 REPO_INFO = {
-    'source_files':       ['*.cpp', '*.h'],
-    'subtrees_to_ignore': ['src/secp256k1/*',
-                           'src/leveldb/*',
-                           'src/univalue/*',
-                           'src/crypto/ctaes/*'],
-    'style_file':         'src/.clang-format',
+    'source_files':             ['*.cpp', '*.h'],
+    'subtrees_to_ignore':       ['src/secp256k1/*',
+                                 'src/leveldb/*',
+                                 'src/univalue/*',
+                                 'src/crypto/ctaes/*'],
+    'style_file':               'src/.clang-format',
+    'recommended_clang_format': '3.9.0',
 }
 
 ###############################################################################
@@ -58,20 +60,24 @@ class StyleScore(object):
                                      float(pre_format))) * 100, 99.0))
 
     def __str__(self):
-        return (" +-------+         +------------+--------+---------+--------"
+        return (" +--------+         +------------+--------+---------+--------"
                 "---+-------------+\n"
-                " | score |         | pre-format |  added | removed | unchang"
+                " | score  |         | pre-format |  added | removed | unchang"
                 "ed | post-format |\n"
-                " +-------+ +-------+------------+--------+---------+--------"
+                " +--------+ +-------+------------+--------+---------+--------"
                 "---+-------------+\n"
-                " | %3.2f%%| | lines | %10d | %6d | %7d | %9d | %11d |\n"
-                " +-------+ +-------+------------+--------+---------+--------"
+                " | %3.2f%% | | lines | %10d | %6d | %7d | %9d | %11d |\n"
+                " +--------+ +-------+------------+--------+---------+--------"
                 "---+-------------+\n" % (self.score, self.pre_format,
                                           self.added, self.removed,
                                           self.unchanged, self.post_format))
+
     def __float__(self):
         return self.score
 
+    def in_range(self, lower, upper):
+        # inclusive
+        return (float(self.score) >= lower) and (float(self.score) <= upper)
 
 ###############################################################################
 # gather file and diff info
@@ -156,121 +162,11 @@ def exit_if_parameters_unsupported(opts):
         # releases of clang-format. A chosen standard of formatting should
         # probably be based on the latest stable release and that should be the
         # recommendation.
-        R.add("\nUsing clang-format version 3.9.0 or higher is recommended\n")
+        R.add("\nUsing clang-format version %s or higher is recommended\n",
+              REPO_INFO['recommended_clang_format'])
         R.add("Use the --force option to override and proceed anyway.\n\n")
         R.flush()
         sys.exit("*** missing clang-format support.")
-
-
-###############################################################################
-# 'report' subcommand execution
-###############################################################################
-
-
-def report_examined_files(opts, git_ls_list):
-    R.add("%4d files tracked in repo\n" %
-          (len(git_ls_list)))
-    scope_list = [p for p in git_ls_list if opts.scope_filter.evaluate(p)]
-    R.add("%4d files in scope according to SOURCE_FILES and ALWAYS_IGNORE "
-          "settings\n" % len(scope_list))
-    target_list = [p for p in git_ls_list if opts.target_filter.evaluate(p)]
-    R.add("%4d files examined according to listed targets\n" %
-          len(target_list))
-
-
-def score_in_range_inclusive(score, lower, upper):
-    return (float(score) >= lower) and (float(score) <= upper)
-
-
-def report_files_in_range(file_infos, lower, upper):
-    in_range = [file_info for file_info in file_infos if
-                score_in_range_inclusive(file_info['score'], lower, upper)]
-    R.add("Files %2d%%-%2d%% matching:        %4d\n" % (lower, upper,
-                                                        len(in_range)))
-
-
-def report_files_in_ranges(file_infos):
-    ranges = [(90, 99), (80, 89), (70, 79), (60, 69), (50, 59), (40, 49),
-              (30, 39), (20, 29), (10, 19), (0, 9)]
-    for lower, upper in ranges:
-        report_files_in_range(file_infos, lower, upper)
-
-
-def report_slowest_diffs(file_infos):
-    slowest = [file_info for file_info in file_infos if
-               file_info['diff_time'] > 1.0]
-    if len(slowest) == 0:
-        return
-    R.add("Slowest diffs:\n")
-    for file_info in slowest:
-        R.add("%6.02fs for %s\n" % (file_info['diff_time'],
-                                    file_info['filename']))
-
-
-def print_report(opts, elapsed_time, file_infos, git_ls_list):
-    pre_format_lines = sum(file_info['pre_format_lines'] for file_info in
-                           file_infos)
-    added_lines = sum(file_info['added_lines'] for file_info in file_infos)
-    removed_lines = sum(file_info['removed_lines'] for file_info in file_infos)
-    unchanged_lines = sum(file_info['unchanged_lines'] for file_info in
-                          file_infos)
-    post_format_lines = sum(file_info['post_format_lines'] for file_info in
-                            file_infos)
-    style_score = StyleScore(pre_format_lines, unchanged_lines, added_lines,
-                             removed_lines, post_format_lines)
-
-    matching = [file_info for file_info in file_infos if
-                file_info['matching']]
-    not_matching = [file_info for file_info in file_infos if not
-                    file_info['matching']]
-    h = hashlib.md5()
-    for file_info in file_infos:
-        h.update(file_info['formatted_md5'].encode('utf-8'))
-    formatted_md5 = h.hexdigest()
-
-    R.separator()
-    report_examined_files(opts, git_ls_list)
-    R.separator()
-    R.add("clang-format bin:         %s\n" % opts.clang_format.binary_path)
-    R.add("clang-format version:     %s\n" % opts.clang_format.binary_version)
-    R.add("Using style in:           %s\n" % opts.clang_format.style)
-    report_if_parameters_unsupported(opts)
-    R.separator()
-    R.add("Parallel jobs for diffs:   %d\n" % opts.jobs)
-    R.add("Elapsed time:              %.02fs\n" % elapsed_time)
-    report_slowest_diffs(file_infos)
-    R.separator()
-    R.add("Files 100%% matching:       %8d\n" % len(matching))
-    R.add("Files <100%% matching:      %8d\n" % len(not_matching))
-    R.add("Formatted content MD5:      %s\n" % formatted_md5)
-    R.separator()
-    report_files_in_ranges(file_infos)
-    R.separator()
-    R.add("\n")
-    R.add(str(style_score))
-    R.add("\n")
-    R.separator()
-    R.flush()
-
-def file_info_iter(repository, tracked_files, target_filter, clang_format):
-    for file_path in tracked_files:
-        if target_filter.evaluate(file_path):
-            yield ClangFormatFileInfo(repository, file_path, clang_format)
-
-def exec_report(opts):
-    start_time = time.time()
-
-    tracked_files = opts.repository.tracked_files()
-
-    file_infos = FileInfos(opts.jobs,
-                           file_info_iter(opts.repository, tracked_files,
-                                          opts.target_filter,
-                                          opts.clang_format))
-
-    file_infos.read_all()
-    file_infos.compute_all()
-
-    print_report(opts, time.time() - start_time, file_infos, tracked_files)
 
 
 ###############################################################################
@@ -343,12 +239,12 @@ def exec_format(opts):
 ###############################################################################
 
 
-class ClangFormatOps(object):
-    def __init__(self, repository, clang_format, style_file, jobs,
+class FileContentCmd(object):
+    def __init__(self, repository, clang_format, style_path, jobs,
                  target_fnmatches):
         self.repository = repository
         self.clang_format = clang_format
-        self.style_file = style_file
+        self.style_path = style_path
         self.jobs = jobs
         self.tracked_files = self._get_tracked_files(self.repository)
         self.files_in_scope = list(self._files_in_scope(self.repository,
@@ -356,6 +252,7 @@ class ClangFormatOps(object):
         self.files_targeted = list(self._files_targeted(self.repository,
                                                         self.files_in_scope,
                                                         target_fnmatches))
+        self.report = Report()
 
     def _get_tracked_files(self, repository):
         return repository.tracked_files()
@@ -381,14 +278,125 @@ class ClangFormatOps(object):
         file_filter = self._target_filter(repository, target_fnmatches)
         return (f for f in tracked_files if file_filter.evaluate(f))
 
-    def report(self):
-        pass
+    def _read_and_compute_file_infos(self):
+        start_time = time.time()
+        self.file_infos = FileInfos(self.jobs,
+            (ClangFormatFileInfo(self.repository, f, self.clang_format) for f
+             in self.files_targeted))
+        self.file_infos.read_all()
+        self.file_infos.compute_all()
+        self.elapsed_time = time.time() - start_time
 
-    def check(self, force=False):
-        pass
 
-    def format(self, force=False):
-        pass
+class ReportCmd(FileContentCmd):
+    def _cumulative_md5(self):
+        # nothing fancy, just hash all the hashes
+        h = hashlib.md5()
+        for f in self.file_infos:
+            h.update(f['formatted_md5'].encode('utf-8'))
+        return h.hexdigest()
+
+    def analysis(self):
+        a = {}
+        file_infos = self.file_infos
+        a['tracked_files'] = len(self.tracked_files)
+        a['files_in_scope'] = len(self.files_in_scope)
+        a['files_targeted'] = len(self.files_targeted)
+
+        a['clang_format_path'] = self.clang_format.binary_path
+        a['clang_format_version'] = str(self.clang_format.binary_version)
+        a['clang_style_path'] = str(self.style_path)
+
+        a['rejected_parameters'] = self.clang_format.style.rejected_parameters
+
+        a['jobs'] = self.jobs
+        a['elapsed_time'] = self.elapsed_time
+
+        a['pre_format_lines'] = sum(f['pre_format_lines'] for f in file_infos)
+        a['added_lines'] = sum(f['added_lines'] for f in file_infos)
+        a['removed_lines'] = sum(f['removed_lines'] for f in file_infos)
+        a['unchanged_lines'] = sum(f['unchanged_lines'] for f in file_infos)
+        a['post_format_lines'] = sum(f['post_format_lines'] for f in
+                                     file_infos)
+        score = StyleScore(a['pre_format_lines'], a['unchanged_lines'],
+                           a['added_lines'], a['removed_lines'],
+                           a['post_format_lines'])
+        a['style_score'] = float(score)
+        a['style_scoreboard'] = str(score)
+        a['slowest_diffs'] = [{'file_path': f['file_path'],
+                               'diff_time': f['diff_time']} for f in
+                              file_infos if f['diff_time'] > 1.0]
+        a['matching'] = sum(1 for f in file_infos if f['matching'])
+        a['not_matching'] = sum(1 for f in file_infos if not f['matching'])
+        a['formatted_md5'] = self._cumulative_md5()
+        a['files_in_range'] = {}
+        ranges = [(90, 99), (80, 89), (70, 79), (60, 69), (50, 59), (40, 49),
+                  (30, 39), (20, 29), (10, 19), (0, 9)]
+        for lower, upper in ranges:
+            a['files_in_range']['%2d%%-%2d%%' % (lower, upper)] = (
+                sum(1 for f in file_infos if
+                    f['score'].in_range(lower, upper)))
+        return a
+
+    def _human_readable(self, a):
+        r = self.report
+        r.separator()
+        r.add("%4d files tracked in repo\n" % a['tracked_files'])
+        r.add("%4d files in scope according to REPO_INFO settings\n" %
+              a['files_in_scope'])
+        r.add("%4d files examined according to listed targets\n" %
+              a['files_targeted'])
+        r.separator()
+        r.add("clang-format bin:         %s\n" % a['clang_format_path'])
+        r.add("clang-format version:     %s\n" % a['clang_format_version'])
+        r.add("Using style in:           %s\n" % a['clang_style_path'])
+        r.separator()
+        if len(a['rejected_parameters']) > 0:
+            r.separator()
+            r.add_red("WARNING")
+            r.add(" - This version of clang-format does not support the "
+                  "following style\nparameters, so they were not used:\n\n")
+            for param in a['rejected_parameters']:
+                r.add("%s\n" % param)
+        r.separator()
+        r.add("Parallel jobs for diffs:   %d\n" % a['jobs'])
+        r.add("Elapsed time:              %.02fs\n" % a['elapsed_time'])
+        if len(a['slowest_diffs']) > 0:
+            r.add("Slowest diffs:\n")
+            for slow in a['slowest_diffs']:
+                r.add("%6.02fs for %s\n" % (slow['diff_time'],
+                                            slow['file_path']))
+        r.separator()
+        r.add("Files scoring 100%%:        %8d\n" % a['matching'])
+        r.add("Files scoring <100%%:       %8d\n" % a['not_matching'])
+        r.add("Formatted content MD5:      %s\n" % a['formatted_md5'])
+        r.separator()
+        for score_range in reversed(sorted(a['files_in_range'].keys())):
+            r.add("Files scoring %s:        %4d\n" % (
+                score_range, a['files_in_range'][score_range]))
+        r.separator()
+        r.add("Overall scoring:\n\n")
+        r.add(a['style_scoreboard'])
+        r.separator()
+        r.flush()
+
+    def cmd(self, human_readable=True):
+        self._read_and_compute_file_infos()
+        analysis = self.analysis()
+        if human_readable:
+            self._human_readable(analysis)
+        else:
+            print(json.dumps(analysis))
+
+class CheckCmd(FileContentCmd):
+
+    def cmd(self, force=False):
+        self._read_and_compute_file_infos()
+
+class FormatCmd(FileContentCmd):
+
+    def cmd(self, force=False):
+        self._read_and_compute_file_infos()
 
 ###############################################################################
 # UI
@@ -456,11 +464,10 @@ if __name__ == "__main__":
                                       base_path=str(opts.repository))
     opts.target_filter.append_include(opts.target_fnmatches,
                                       base_path=str(opts.repository))
-    ops = ClangFormatOps(opts.repository, opts.clang_format, opts.style_file,
-                         opts.jobs, opts.target_fnmatches)
     # execute commands
     if opts.subcommand == 'report':
-        exec_report(opts)
+        ReportCmd(opts.repository, opts.clang_format, style_path,
+                  opts.jobs, opts.target_fnmatches).cmd(human_readable=True)
     elif opts.subcommand == 'check':
         exec_check(opts)
     else:

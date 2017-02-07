@@ -40,6 +40,7 @@ class FileInfo(dict):
 # a set of files
 ###############################################################################
 
+
 def compute_file_info(file_info):
     file_info.compute()
     return file_info
@@ -60,8 +61,8 @@ class FileInfos(object):
             yield file_info
 
     def read_all(self):
-        # read in serial - this is better for some VM environments that can't
-        # gracefully schedule parallel, high-throughput file I/O
+        # read in serial - this is better on some VM environments that can't
+        # gracefully schedule parallel, high-throughput filesystem I/O
         for file_info in self.file_info_list:
             file_info.read()
 
