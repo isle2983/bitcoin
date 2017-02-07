@@ -241,11 +241,13 @@ def exec_format(opts):
 
 class FileContentCmd(object):
     def __init__(self, repository, clang_format, style_path, jobs,
-                 target_fnmatches):
+                 target_fnmatches, json, force=False):
         self.repository = repository
         self.clang_format = clang_format
         self.style_path = style_path
         self.jobs = jobs
+        self.json = json
+        self.force = force
         self.tracked_files = self._get_tracked_files(self.repository)
         self.files_in_scope = list(self._files_in_scope(self.repository,
                                                         self.tracked_files))
@@ -287,6 +289,32 @@ class FileContentCmd(object):
         self.file_infos.compute_all()
         self.elapsed_time = time.time() - start_time
 
+    def _analysis(self):
+        a = {}
+        a['tracked_files'] = len(self.tracked_files)
+        a['files_in_scope'] = len(self.files_in_scope)
+        a['files_targeted'] = len(self.files_targeted)
+        return a
+
+    def _human_print(self):
+        r = self.report
+        a = self.results
+        r.separator()
+        r.add("%4d files tracked in repo\n" % a['tracked_files'])
+        r.add("%4d files in scope according to REPO_INFO settings\n" %
+              a['files_in_scope'])
+        r.add("%4d files examined according to listed targets\n" %
+              a['files_targeted'])
+        r.separator()
+
+    def _json_print(self):
+        print(json.dumps(self.results))
+
+    def exec(self):
+        self._read_and_compute_file_infos()
+        self.results = self._analysis()
+        self._json_print() if self.json else self._human_print()
+
 
 class ReportCmd(FileContentCmd):
     def _cumulative_md5(self):
@@ -296,22 +324,25 @@ class ReportCmd(FileContentCmd):
             h.update(f['formatted_md5'].encode('utf-8'))
         return h.hexdigest()
 
-    def analysis(self):
-        a = {}
-        file_infos = self.file_infos
-        a['tracked_files'] = len(self.tracked_files)
-        a['files_in_scope'] = len(self.files_in_scope)
-        a['files_targeted'] = len(self.files_targeted)
+    def _files_in_ranges(self):
+        files_in_ranges = {}
+        ranges = [(90, 99), (80, 89), (70, 79), (60, 69), (50, 59), (40, 49),
+                  (30, 39), (20, 29), (10, 19), (0, 9)]
+        for lower, upper in ranges:
+            files_in_ranges['%2d%%-%2d%%' % (lower, upper)] = (
+                sum(1 for f in self.file_infos if
+                    f['score'].in_range(lower, upper)))
+        return files_in_ranges
 
+    def _analysis(self):
+        a = super()._analysis()
+        file_infos = self.file_infos
         a['clang_format_path'] = self.clang_format.binary_path
         a['clang_format_version'] = str(self.clang_format.binary_version)
         a['clang_style_path'] = str(self.style_path)
-
         a['rejected_parameters'] = self.clang_format.style.rejected_parameters
-
         a['jobs'] = self.jobs
         a['elapsed_time'] = self.elapsed_time
-
         a['pre_format_lines'] = sum(f['pre_format_lines'] for f in file_infos)
         a['added_lines'] = sum(f['added_lines'] for f in file_infos)
         a['removed_lines'] = sum(f['removed_lines'] for f in file_infos)
@@ -329,36 +360,24 @@ class ReportCmd(FileContentCmd):
         a['matching'] = sum(1 for f in file_infos if f['matching'])
         a['not_matching'] = sum(1 for f in file_infos if not f['matching'])
         a['formatted_md5'] = self._cumulative_md5()
-        a['files_in_range'] = {}
-        ranges = [(90, 99), (80, 89), (70, 79), (60, 69), (50, 59), (40, 49),
-                  (30, 39), (20, 29), (10, 19), (0, 9)]
-        for lower, upper in ranges:
-            a['files_in_range']['%2d%%-%2d%%' % (lower, upper)] = (
-                sum(1 for f in file_infos if
-                    f['score'].in_range(lower, upper)))
+        a['files_in_ranges'] = self._files_in_ranges()
         return a
 
-    def _human_readable(self, a):
+    def _human_print(self):
+        super()._human_print()
         r = self.report
-        r.separator()
-        r.add("%4d files tracked in repo\n" % a['tracked_files'])
-        r.add("%4d files in scope according to REPO_INFO settings\n" %
-              a['files_in_scope'])
-        r.add("%4d files examined according to listed targets\n" %
-              a['files_targeted'])
-        r.separator()
+        a = self.results
         r.add("clang-format bin:         %s\n" % a['clang_format_path'])
         r.add("clang-format version:     %s\n" % a['clang_format_version'])
         r.add("Using style in:           %s\n" % a['clang_style_path'])
         r.separator()
         if len(a['rejected_parameters']) > 0:
-            r.separator()
             r.add_red("WARNING")
             r.add(" - This version of clang-format does not support the "
                   "following style\nparameters, so they were not used:\n\n")
             for param in a['rejected_parameters']:
                 r.add("%s\n" % param)
-        r.separator()
+            r.separator()
         r.add("Parallel jobs for diffs:   %d\n" % a['jobs'])
         r.add("Elapsed time:              %.02fs\n" % a['elapsed_time'])
         if len(a['slowest_diffs']) > 0:
@@ -371,32 +390,56 @@ class ReportCmd(FileContentCmd):
         r.add("Files scoring <100%%:       %8d\n" % a['not_matching'])
         r.add("Formatted content MD5:      %s\n" % a['formatted_md5'])
         r.separator()
-        for score_range in reversed(sorted(a['files_in_range'].keys())):
+        for score_range in reversed(sorted(a['files_in_ranges'].keys())):
             r.add("Files scoring %s:        %4d\n" % (
-                score_range, a['files_in_range'][score_range]))
+                score_range, a['files_in_ranges'][score_range]))
         r.separator()
         r.add("Overall scoring:\n\n")
         r.add(a['style_scoreboard'])
         r.separator()
         r.flush()
 
-    def cmd(self, human_readable=True):
-        self._read_and_compute_file_infos()
-        analysis = self.analysis()
-        if human_readable:
-            self._human_readable(analysis)
-        else:
-            print(json.dumps(analysis))
 
 class CheckCmd(FileContentCmd):
+    def _analysis(self):
+        a = super()._analysis()
+        a['failures'] = [{'file_path':         f['file_path'],
+                          'style_score':       float(f['score']),
+                          'style_scoreboard':  str(f['score']),
+                          'pre_format_lines':  f['pre_format_lines'],
+                          'added_lines':       f['added_lines'],
+                          'removed_lines':     f['removed_lines'],
+                          'unchanged_lines':   f['unchanged_lines'],
+                          'post_format_lines': f['post_format_lines']}
+                         for f in self.file_infos if not f['matching']]
+        return a
 
-    def cmd(self, force=False):
-        self._read_and_compute_file_infos()
+    def _human_print(self):
+        super()._human_print()
+        r = self.report
+        a = self.results
+        for f in a['failures']:
+            r.add("A code format issue was detected in ")
+            r.add_red("%s\n\n" % f['file_path'])
+            r.add(f['style_scoreboard'])
+            r.separator()
+        if len(a['failures']) == 0:
+            r.add_green("No format issues found!\n")
+        else:
+            r.add_red("These files can be auto-formatted by running:\n\n")
+            r.add("$ %s format %s\n" % (
+                self.clang_format.binary_path,
+                ' '.join(f['file_path'] for f in a['failures'])))
+        r.separator()
+        r.flush()
+
 
 class FormatCmd(FileContentCmd):
+    def _analysis(self):
+        pass
 
-    def cmd(self, force=False):
-        self._read_and_compute_file_infos()
+    def _human_print(self):
+        pass
 
 ###############################################################################
 # UI
@@ -450,25 +493,16 @@ if __name__ == "__main__":
                   os.path.join(str(opts.repository), REPO_INFO['style_file']))
     opts.clang_format = ClangFormat(binary, style_path)
 
-    # set up file filters
-    opts.scope_filter = FileFilter()
-    opts.scope_filter.append_include(REPO_INFO['source_files'],
-                                     base_path=str(opts.repository))
-    opts.scope_filter.append_exclude(REPO_INFO['subtrees_to_ignore'],
-                                     base_path=str(opts.repository))
-
-    opts.target_filter = FileFilter()
-    opts.target_filter.append_include(REPO_INFO['source_files'],
-                                      base_path=str(opts.repository))
-    opts.target_filter.append_exclude(REPO_INFO['subtrees_to_ignore'],
-                                      base_path=str(opts.repository))
-    opts.target_filter.append_include(opts.target_fnmatches,
-                                      base_path=str(opts.repository))
     # execute commands
     if opts.subcommand == 'report':
         ReportCmd(opts.repository, opts.clang_format, style_path,
-                  opts.jobs, opts.target_fnmatches).cmd(human_readable=True)
+                  opts.jobs, opts.target_fnmatches, json=True,
+                  force=False).exec()
     elif opts.subcommand == 'check':
-        exec_check(opts)
+        CheckCmd(opts.repository, opts.clang_format, style_path,
+                 opts.jobs, opts.target_fnmatches, json=False,
+                 force=False).exec()
     else:
-        exec_format(opts)
+        FormatCmd(opts.repository, opts.clang_format, style_path,
+                  opts.jobs, opts.target_fnmatches, json=True,
+                  force=False).exec()
