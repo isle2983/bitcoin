@@ -5,26 +5,20 @@
 
 import sys
 import os
-import subprocess
 import time
 import argparse
-import re
-import fnmatch
 import difflib
 import hashlib
 import json
-from multiprocessing import Pool
+
 from framework.report import Report
 from framework.action import ReadableFileAction
 from framework.clang import ClangDirectoryAction
 from framework.clang import ClangFind
 from framework.clang import ClangFormat
 from framework.file_filter import FileFilter
-from framework.file import read_file, write_file
 from framework.git import GitTrackedTargetsAction
 from framework.file_info import FileInfo, FileInfos
-
-R = Report()
 
 ###############################################################################
 # settings for the set of files that this applies to
@@ -134,18 +128,6 @@ class ClangFormatFileInfo(FileInfo):
 ###############################################################################
 
 
-def report_if_parameters_unsupported(opts):
-    rejected = opts.clang_format.style.rejected_parameters
-    if len(rejected) == 0:
-        return
-    R.separator()
-    R.add_red("WARNING")
-    R.add(" - This version of clang-format does not support the "
-          "following style\nparameters, so they were not used:\n\n")
-    for param in rejected:
-        R.add("%s\n" % param)
-
-
 def exit_if_parameters_unsupported(opts):
     if opts.force:
         return
@@ -170,84 +152,15 @@ def exit_if_parameters_unsupported(opts):
 
 
 ###############################################################################
-# 'check' subcommand execution
-###############################################################################
-
-
-def get_failures(file_infos):
-    return [file_info for file_info in file_infos if not
-            file_info['matching']]
-
-
-def report_failure(failure):
-    R.add("A code format issue was detected in ")
-    r.add_red("%s\n" % failure['filename'])
-    R.add(scoreboard(failure['score'], failure['pre_format_lines'],
-                     failure['added_lines'], failure['removed_lines'],
-                     failure['unchanged_lines'],
-                     failure['post_format_lines']))
-
-
-def print_check(opts, failures, file_infos, in_scope_file_list,
-                full_file_list):
-    R.separator()
-    report_examined_files(file_infos, in_scope_file_list, full_file_list)
-    for failure in failures:
-        R.separator()
-        report_failure(failure)
-    R.separator()
-    if len(failures) == 0:
-        R.add_green("No format issues found!\n")
-    else:
-        R.add_red("These files can be auto-formatted by running:\n")
-        R.add("$ contrib/devtools/clang_format.py format [target "
-              "[target ...]]\n")
-    R.separator()
-
-
-def exec_check(opts):
-    full_file_list = git_ls(opts)
-    in_scope_file_list = get_filenames_in_scope(full_file_list)
-    file_infos = [gather_file_info(opts, filename) for filename in
-                  in_scope_file_list if opts.target_regex.match(filename)]
-    exit_if_parameters_unsupported(opts)
-    file_infos = Pool(opts.jobs).map(compute_diff_info, file_infos)
-    failures = get_failures(file_infos)
-    print_check(opts, failures, file_infos, in_scope_file_list, full_file_list)
-    if len(failures) > 0:
-        sys.exit("*** Format issues found!")
-
-
-###############################################################################
-# 'format' subcommand execution
-###############################################################################
-
-
-def exec_format(opts):
-    full_file_list = git_ls(opts)
-    in_scope_file_list = get_filenames_in_scope(full_file_list)
-    file_infos = [gather_file_info(opts, filename) for filename in
-                  in_scope_file_list if opts.target_regex.match(filename)]
-    exit_if_parameters_unsupported(opts)
-    failures = get_failures(file_infos)
-    for failure in failures:
-        write_file(failure['filename'], failure['formatted'])
-
-
-###############################################################################
 # 'format' subcommand execution
 ###############################################################################
 
 
 class FileContentCmd(object):
-    def __init__(self, repository, clang_format, style_path, jobs,
-                 target_fnmatches, json, force=False):
+    def __init__(self, repository, jobs, target_fnmatches, json):
         self.repository = repository
-        self.clang_format = clang_format
-        self.style_path = style_path
         self.jobs = jobs
         self.json = json
-        self.force = force
         self.tracked_files = self._get_tracked_files(self.repository)
         self.files_in_scope = list(self._files_in_scope(self.repository,
                                                         self.tracked_files))
@@ -280,11 +193,10 @@ class FileContentCmd(object):
         file_filter = self._target_filter(repository, target_fnmatches)
         return (f for f in tracked_files if file_filter.evaluate(f))
 
+
     def _read_and_compute_file_infos(self):
         start_time = time.time()
-        self.file_infos = FileInfos(self.jobs,
-            (ClangFormatFileInfo(self.repository, f, self.clang_format) for f
-             in self.files_targeted))
+        self.file_infos = FileInfos(self.jobs, self._get_file_info_list())
         self.file_infos.read_all()
         self.file_infos.compute_all()
         self.elapsed_time = time.time() - start_time
@@ -320,7 +232,19 @@ class FileContentCmd(object):
         self._json_print() if self.json else self._human_print()
 
 
-class ReportCmd(FileContentCmd):
+class ClangFormatCmd(FileContentCmd):
+    def __init__(self, repository, jobs, target_fnmatches, json, clang_format,
+                 style_path):
+        super().__init__(repository, jobs, target_fnmatches, json)
+        self.clang_format = clang_format
+        self.style_path = style_path
+
+    def _get_file_info_list(self):
+        return [ClangFormatFileInfo(self.repository, f, self.clang_format) for
+                f in self.files_targeted]
+
+
+class ReportCmd(ClangFormatCmd):
     def _cumulative_md5(self):
         # nothing fancy, just hash all the hashes
         h = hashlib.md5()
@@ -404,7 +328,13 @@ class ReportCmd(FileContentCmd):
         r.flush()
 
 
-class CheckCmd(FileContentCmd):
+class CheckCmd(ClangFormatCmd):
+    def __init__(self, repository, jobs, target_fnmatches, json, force,
+                 clang_format, style_path):
+        super().__init__(repository, jobs, target_fnmatches, json,
+                         clang_format, style_path)
+        self.force = force
+
     def _analysis(self):
         a = super()._analysis()
         a['failures'] = [{'file_path':         f['file_path'],
@@ -437,9 +367,15 @@ class CheckCmd(FileContentCmd):
         r.flush()
 
 
-class FormatCmd(FileContentCmd):
+class FormatCmd(ClangFormatCmd):
+    def __init__(self, repository, jobs, target_fnmatches, json, force,
+                 clang_format, style_path):
+        super().__init__(repository, jobs, target_fnmatches, json,
+                         clang_format, style_path)
+        self.force = force
+
     def _analysis(self):
-        pass
+        return None
 
     def _human_print(self):
         pass
@@ -505,14 +441,11 @@ if __name__ == "__main__":
 
     # execute commands
     if opts.subcommand == 'report':
-        ReportCmd(opts.repository, opts.clang_format, style_path,
-                  opts.jobs, opts.target_fnmatches, json=True,
-                  force=False).exec()
+        ReportCmd(opts.repository, opts.jobs, opts.target_fnmatches,
+                  False, opts.clang_format, style_path).exec()
     elif opts.subcommand == 'check':
-        CheckCmd(opts.repository, opts.clang_format, style_path,
-                 opts.jobs, opts.target_fnmatches, json=False,
-                 force=False).exec()
+        CheckCmd(opts.repository, opts.jobs, opts.target_fnmatches, False,
+                 False, opts.clang_format, style_path).exec()
     else:
-        FormatCmd(opts.repository, opts.clang_format, style_path,
-                  opts.jobs, opts.target_fnmatches, json=True,
-                  force=False).exec()
+        FormatCmd(opts.repository, opts.jobs, opts.target_fnmatches, True,
+                  False, opts.clang_format, style_path).exec()

@@ -48,9 +48,9 @@ def compute_file_info(file_info):
 
 class FileInfos(object):
     """
-    A container for a set of files which can do the computing of the file
-    info in parallel. I/O is done in serial because some VM environments can't
-    gracefully schedule parallel, high-throughput filesystem I/O.
+    A container for a set of files which can do the computing of the file info
+    in parallel. I/O is done in serial because some VM setups can't gracefully
+    schedule parallel, high-throughput filesystem I/O.
     """
     def __init__(self, jobs, file_info_iter):
         self.jobs = jobs
