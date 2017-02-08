@@ -16,9 +16,9 @@ from framework.action import ReadableFileAction
 from framework.clang import ClangDirectoryAction
 from framework.clang import ClangFind
 from framework.clang import ClangFormat
-from framework.file_filter import FileFilter
 from framework.git import GitTrackedTargetsAction
-from framework.file_info import FileInfo, FileInfos
+from framework.file_info import FileInfo
+from framework.file_content_cmd import FileContentCmd
 
 ###############################################################################
 # settings for the set of files that this applies to
@@ -80,6 +80,10 @@ class StyleScore(object):
 DIFFER = difflib.Differ()
 
 class ClangFormatFileInfo(FileInfo):
+    """
+    Obtains and represents the information regarding a single file obtained
+    from clang-format.
+    """
     def __init__(self, repository, file_path, clang_format, force):
         super().__init__(repository, file_path)
         self.clang_format = clang_format
@@ -146,92 +150,17 @@ class ClangFormatFileInfo(FileInfo):
                                    self['post_format_lines'])
         self['diff_time'] = time.time() - start_time
 
-
 ###############################################################################
 # 'format' subcommand execution
 ###############################################################################
 
 
-class FileContentCmd(object):
-    def __init__(self, repository, jobs, target_fnmatches, json):
-        self.repository = repository
-        self.jobs = jobs
-        self.json = json
-        self.tracked_files = self._get_tracked_files(self.repository)
-        self.files_in_scope = list(self._files_in_scope(self.repository,
-                                                        self.tracked_files))
-        self.files_targeted = list(self._files_targeted(self.repository,
-                                                        self.files_in_scope,
-                                                        target_fnmatches))
-        self.report = Report()
-
-    def _get_tracked_files(self, repository):
-        return repository.tracked_files()
-
-    def _scope_filter(self, repository):
-        file_filter = FileFilter()
-        file_filter.append_include(REPO_INFO['source_files'],
-                                   base_path=str(repository))
-        file_filter.append_exclude(REPO_INFO['subtrees_to_ignore'],
-                                   base_path=str(repository))
-        return file_filter
-
-    def _files_in_scope(self, repository, tracked_files):
-        file_filter = self._scope_filter(repository)
-        return (f for f in tracked_files if file_filter.evaluate(f))
-
-    def _target_filter(self, repository, target_fnmatches):
-        file_filter = self._scope_filter(repository)
-        file_filter.append_include(target_fnmatches, base_path=repository)
-        return file_filter
-
-    def _files_targeted(self, repository, tracked_files, target_fnmatches):
-        file_filter = self._target_filter(repository, target_fnmatches)
-        return (f for f in tracked_files if file_filter.evaluate(f))
-
-
-    def _read_and_compute_file_infos(self):
-        start_time = time.time()
-        self.file_infos = FileInfos(self.jobs, self._file_info_list())
-        self.file_infos.read_all()
-        self.file_infos.compute_all()
-        self.elapsed_time = time.time() - start_time
-
-    def _analysis(self):
-        a = {}
-        a['tracked_files'] = len(self.tracked_files)
-        a['files_in_scope'] = len(self.files_in_scope)
-        a['files_targeted'] = len(self.files_targeted)
-        return a
-
-    def _human_print(self):
-        r = self.report
-        a = self.results
-        r.separator()
-        r.add("%4d files tracked in repo\n" % a['tracked_files'])
-        r.add("%4d files in scope according to REPO_INFO settings\n" %
-              a['files_in_scope'])
-        r.add("%4d files examined according to listed targets\n" %
-              a['files_targeted'])
-        r.separator()
-
-    def _json_print(self):
-        print(json.dumps(self.results))
-
-    def _write_files(self):
-        pass
-
-    def exec(self):
-        self._read_and_compute_file_infos()
-        self._write_files()
-        self.results = self._analysis()
-        self._json_print() if self.json else self._human_print()
-
-
 class ClangFormatCmd(FileContentCmd):
     def __init__(self, repository, jobs, target_fnmatches, json, clang_format,
                  style_path, force):
-        super().__init__(repository, jobs, target_fnmatches, json)
+        super().__init__(repository, jobs, REPO_INFO['source_files'],
+                         REPO_INFO['subtrees_to_ignore'], target_fnmatches,
+                         json)
         self.clang_format = clang_format
         self.style_path = style_path
         self.force = force
