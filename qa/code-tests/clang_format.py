@@ -80,14 +80,38 @@ class StyleScore(object):
 DIFFER = difflib.Differ()
 
 class ClangFormatFileInfo(FileInfo):
-    def __init__(self, repository, file_path, clang_format):
+    def __init__(self, repository, file_path, clang_format, force):
         super().__init__(repository, file_path)
         self.clang_format = clang_format
+        self.force = force
 
     def read(self):
         super().read()
         self['formatted'] = (
             self.clang_format.read_formatted_file(self['file_path']))
+        self._exit_if_parameters_unsupported()
+
+    def _exit_if_parameters_unsupported(self):
+        if self.force:
+            return
+        rejected_parameters = self.clang_format.style.rejected_parameters
+        if len(rejected_parameters) > 0:
+            r = Report()
+            r.add_red("\nERROR: ")
+            r.add("clang-format version %s does not support all parameters "
+                  "given in\n%s\n\n" % (self.clang_format.binary_version,
+                                        self.clang_format.style))
+            r.add("Unsupported parameters:\n")
+            for parameter in rejected_parameters:
+                r.add("\t%s\n" % parameter)
+            # The applied formating has subtle differences that vary between
+            # major releases of clang-format. The recommendation should
+            # probably follow the latest widely-available stable release.
+            r.add("\nUsing clang-format version %s or higher is recommended\n"
+                  % REPO_INFO['recommended_clang_format'])
+            r.add("Use the --force option to override and proceed anyway.\n\n")
+            r.flush()
+            sys.exit("*** missing clang-format support.")
 
     def _sum_lines_of_type(self, diff):
         def classify_diff_lines(diff):
@@ -121,34 +145,6 @@ class ClangFormatFileInfo(FileInfo):
                                    self['removed_lines'],
                                    self['post_format_lines'])
         self['diff_time'] = time.time() - start_time
-
-
-###############################################################################
-# warning for old versions of clang-format
-###############################################################################
-
-
-def exit_if_parameters_unsupported(opts):
-    if opts.force:
-        return
-    if len(opts.unknown_style_params) > 0:
-        R.add_red("\nWARNING: ")
-        R.add("clang-format version %s does not support all "
-              "parameters given in\n%s\n\n" % (opts.bin_version,
-                                               opts.style_file))
-        R.add("Unsupported parameters:\n")
-        for param in opts.unknown_style_params:
-            R.add("\t%s\n" % param)
-        # The recommendation is from experimentation where it is found that the
-        # applied formating has subtle differences that vary between major
-        # releases of clang-format. A chosen standard of formatting should
-        # probably be based on the latest stable release and that should be the
-        # recommendation.
-        R.add("\nUsing clang-format version %s or higher is recommended\n",
-              REPO_INFO['recommended_clang_format'])
-        R.add("Use the --force option to override and proceed anyway.\n\n")
-        R.flush()
-        sys.exit("*** missing clang-format support.")
 
 
 ###############################################################################
@@ -196,7 +192,7 @@ class FileContentCmd(object):
 
     def _read_and_compute_file_infos(self):
         start_time = time.time()
-        self.file_infos = FileInfos(self.jobs, self._get_file_info_list())
+        self.file_infos = FileInfos(self.jobs, self._file_info_list())
         self.file_infos.read_all()
         self.file_infos.compute_all()
         self.elapsed_time = time.time() - start_time
@@ -234,17 +230,24 @@ class FileContentCmd(object):
 
 class ClangFormatCmd(FileContentCmd):
     def __init__(self, repository, jobs, target_fnmatches, json, clang_format,
-                 style_path):
+                 style_path, force):
         super().__init__(repository, jobs, target_fnmatches, json)
         self.clang_format = clang_format
         self.style_path = style_path
+        self.force = force
 
-    def _get_file_info_list(self):
-        return [ClangFormatFileInfo(self.repository, f, self.clang_format) for
-                f in self.files_targeted]
+    def _file_info_list(self):
+        return [ClangFormatFileInfo(self.repository, f, self.clang_format,
+                                    self.force)
+                for f in self.files_targeted]
 
 
 class ReportCmd(ClangFormatCmd):
+    def __init__(self, repository, jobs, target_fnmatches, json, clang_format,
+                 style_path):
+        super().__init__(repository, jobs, target_fnmatches, json,
+                         clang_format, style_path, True)
+
     def _cumulative_md5(self):
         # nothing fancy, just hash all the hashes
         h = hashlib.md5()
@@ -329,11 +332,10 @@ class ReportCmd(ClangFormatCmd):
 
 
 class CheckCmd(ClangFormatCmd):
-    def __init__(self, repository, jobs, target_fnmatches, json, force,
-                 clang_format, style_path):
+    def __init__(self, repository, jobs, target_fnmatches, json, clang_format,
+                 style_path, force):
         super().__init__(repository, jobs, target_fnmatches, json,
-                         clang_format, style_path)
-        self.force = force
+                         clang_format, style_path, force)
 
     def _analysis(self):
         a = super()._analysis()
@@ -368,11 +370,10 @@ class CheckCmd(ClangFormatCmd):
 
 
 class FormatCmd(ClangFormatCmd):
-    def __init__(self, repository, jobs, target_fnmatches, json, force,
-                 clang_format, style_path):
-        super().__init__(repository, jobs, target_fnmatches, json,
-                         clang_format, style_path)
-        self.force = force
+    def __init__(self, repository, jobs, target_fnmatches, clang_format,
+                 style_path, force):
+        super().__init__(repository, jobs, target_fnmatches, False,
+                         clang_format, style_path, force)
 
     def _analysis(self):
         return None
@@ -441,11 +442,11 @@ if __name__ == "__main__":
 
     # execute commands
     if opts.subcommand == 'report':
-        ReportCmd(opts.repository, opts.jobs, opts.target_fnmatches,
-                  False, opts.clang_format, style_path).exec()
+        ReportCmd(opts.repository, opts.jobs, opts.target_fnmatches, False,
+                  opts.clang_format, style_path).exec()
     elif opts.subcommand == 'check':
         CheckCmd(opts.repository, opts.jobs, opts.target_fnmatches, False,
-                 False, opts.clang_format, style_path).exec()
+                 opts.clang_format, style_path, False).exec()
     else:
-        FormatCmd(opts.repository, opts.jobs, opts.target_fnmatches, True,
-                  False, opts.clang_format, style_path).exec()
+        FormatCmd(opts.repository, opts.jobs, opts.target_fnmatches,
+                  opts.clang_format, style_path, False).exec()

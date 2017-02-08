@@ -78,7 +78,6 @@ class ClangFind(object):
         self.binaries = self._find_binaries(search_directories)
 
     def _parameter_directory(self, path_arg_str):
-        print(path_arg_str)
         p = Path(path_arg_str)
         p.assert_exists()
         # Tarball-download versions of clang put binaries in a bin/
@@ -89,7 +88,6 @@ class ClangFind(object):
             return p.directory()
         bin_subdir = os.path.join(str(p), "bin/")
         if os.path.exists(bin_subdir):
-            print("subdir %s\n" % bin_subdir)
             return bin_subdir
         return str(p)
 
