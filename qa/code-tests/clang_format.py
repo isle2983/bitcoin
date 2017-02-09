@@ -150,7 +150,7 @@ class ClangFormatFileInfo(FileInfo):
         self['diff_time'] = time.time() - start_time
 
 ###############################################################################
-# 'format' subcommand execution
+# cmd base class
 ###############################################################################
 
 
@@ -168,6 +168,9 @@ class ClangFormatCmd(FileContentCmd):
                                     self.force)
                 for f in self.files_targeted]
 
+###############################################################################
+# report cmd
+###############################################################################
 
 class ReportCmd(ClangFormatCmd):
     def __init__(self, repository, jobs, target_fnmatches, json, clang_format):
@@ -257,6 +260,15 @@ class ReportCmd(ClangFormatCmd):
         r.flush()
 
 
+def exec_report_cmd(options):
+    ReportCmd(options.repository, options.jobs, options.target_fnmatches,
+              options.json, options.clang_format).exec()
+
+
+###############################################################################
+# check cmd
+###############################################################################
+
 class CheckCmd(ClangFormatCmd):
     def __init__(self, repository, jobs, target_fnmatches, json, clang_format,
                  force):
@@ -289,11 +301,20 @@ class CheckCmd(ClangFormatCmd):
             r.add_green("No format issues found!\n")
         else:
             r.add_red("These files can be auto-formatted by running:\n\n")
-            r.add("$ clang_format.py format %s\n" %
-                  ' '.join(f['file_path'] for f in a['failures']))
+            r.add("\t$ clang_format.py format [option [option ...]] "
+                  "[file [file ...]]\n")
         r.separator()
         r.flush()
 
+
+def exec_check_cmd(options):
+    CheckCmd(options.repository, options.jobs, options.target_fnmatches,
+             options.json, options.clang_format, options.force).exec()
+
+
+###############################################################################
+# format cmd
+###############################################################################
 
 class FormatCmd(ClangFormatCmd):
     def __init__(self, repository, target_fnmatches, clang_format, force):
@@ -316,23 +337,15 @@ class FormatCmd(ClangFormatCmd):
         self.file_infos.write_all()
 
 
+def exec_format_cmd(options):
+    FormatCmd(options.repository, options.target_fnmatches,
+              options.clang_format, options.force).exec()
+
+
 ###############################################################################
 # UI
 ###############################################################################
 
-def report_cmd(options):
-    ReportCmd(options.repository, options.jobs, options.target_fnmatches,
-              options.json, options.clang_format).exec()
-
-
-def check_cmd(options):
-    CheckCmd(options.repository, options.jobs, options.target_fnmatches,
-             options.json, options.clang_format, options.force).exec()
-
-
-def format_cmd(options):
-    FormatCmd(options.repository, options.target_fnmatches,
-              options.clang_format, options.force).exec()
 
 def finalize_clang_format(options):
     binary = (options.clang_executables['clang-format'] if
@@ -354,15 +367,15 @@ if __name__ == "__main__":
     report_help = ("Produces a report with the analysis of the selected"
                    "targets taken as a group.")
     report_parser = subparsers.add_parser('report', help=report_help)
-    report_parser.set_defaults(func=report_cmd)
+    report_parser.set_defaults(func=exec_report_cmd)
     check_help = ("Validates that the selected targets match the style, gives "
                   "a per-file report and returns a non-zero bash status if "
                   "there are any format issues discovered.")
     check_parser = subparsers.add_parser('check', help=check_help)
-    check_parser.set_defaults(func=check_cmd)
+    check_parser.set_defaults(func=exec_check_cmd)
     format_help = ("Applies the style formatting to the target files.")
     format_parser = subparsers.add_parser('format', help=format_help)
-    format_parser.set_defaults(func=format_cmd)
+    format_parser.set_defaults(func=exec_format_cmd)
     # args for some of the subcommands:
     j_help = ("Parallel jobs for computing diffs. (default=4)")
     for p in [report_parser, check_parser]:
