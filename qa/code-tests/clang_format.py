@@ -9,7 +9,6 @@ import time
 import argparse
 import difflib
 import hashlib
-import json
 
 from framework.report import Report
 from framework.action import ReadableFileAction
@@ -94,6 +93,7 @@ class ClangFormatFileInfo(FileInfo):
         self['formatted'] = (
             self.clang_format.read_formatted_file(self['file_path']))
         self._exit_if_parameters_unsupported()
+        self.set_write_content(self['formatted'])
 
     def _exit_if_parameters_unsupported(self):
         if self.force:
@@ -130,7 +130,6 @@ class ClangFormatFileInfo(FileInfo):
         return (sum(c) for c in zip(*classify_diff_lines(diff)))
 
     def compute(self):
-        self.set_write_content(self['formatted'])
         self['matching'] = self['content'] == self['formatted']
         self['formatted_md5'] = (
             hashlib.md5(self['formatted'].encode('utf-8')).hexdigest())
@@ -157,12 +156,11 @@ class ClangFormatFileInfo(FileInfo):
 
 class ClangFormatCmd(FileContentCmd):
     def __init__(self, repository, jobs, target_fnmatches, json, clang_format,
-                 style_path, force):
+                 force):
         super().__init__(repository, jobs, REPO_INFO['source_files'],
                          REPO_INFO['subtrees_to_ignore'], target_fnmatches,
                          json)
         self.clang_format = clang_format
-        self.style_path = style_path
         self.force = force
 
     def _file_info_list(self):
@@ -172,10 +170,9 @@ class ClangFormatCmd(FileContentCmd):
 
 
 class ReportCmd(ClangFormatCmd):
-    def __init__(self, repository, jobs, target_fnmatches, json, clang_format,
-                 style_path):
+    def __init__(self, repository, jobs, target_fnmatches, json, clang_format):
         super().__init__(repository, jobs, target_fnmatches, json,
-                         clang_format, style_path, True)
+                         clang_format, True)
 
     def _cumulative_md5(self):
         # nothing fancy, just hash all the hashes
@@ -199,7 +196,7 @@ class ReportCmd(ClangFormatCmd):
         file_infos = self.file_infos
         a['clang_format_path'] = self.clang_format.binary_path
         a['clang_format_version'] = str(self.clang_format.binary_version)
-        a['clang_style_path'] = str(self.style_path)
+        a['clang_style_path'] = str(self.clang_format.style_path)
         a['rejected_parameters'] = self.clang_format.style.rejected_parameters
         a['jobs'] = self.jobs
         a['elapsed_time'] = self.elapsed_time
@@ -262,9 +259,9 @@ class ReportCmd(ClangFormatCmd):
 
 class CheckCmd(ClangFormatCmd):
     def __init__(self, repository, jobs, target_fnmatches, json, clang_format,
-                 style_path, force):
+                 force):
         super().__init__(repository, jobs, target_fnmatches, json,
-                         clang_format, style_path, force)
+                         clang_format, force)
 
     def _analysis(self):
         a = super()._analysis()
@@ -299,10 +296,12 @@ class CheckCmd(ClangFormatCmd):
 
 
 class FormatCmd(ClangFormatCmd):
-    def __init__(self, repository, jobs, target_fnmatches, clang_format,
-                 style_path, force):
-        super().__init__(repository, jobs, target_fnmatches, False,
-                         clang_format, style_path, force)
+    def __init__(self, repository, target_fnmatches, clang_format, force):
+        super().__init__(repository, 1, target_fnmatches, False, clang_format,
+                         force)
+
+    def _compute_file_infos(self):
+        pass
 
     def _analysis(self):
         return None
@@ -321,61 +320,83 @@ class FormatCmd(ClangFormatCmd):
 # UI
 ###############################################################################
 
+def report_cmd(options):
+    ReportCmd(options.repository, options.jobs, options.target_fnmatches,
+              options.json, options.clang_format).exec()
+
+
+def check_cmd(options):
+    CheckCmd(options.repository, options.jobs, options.target_fnmatches,
+             options.json, options.clang_format, options.force).exec()
+
+
+def format_cmd(options):
+    FormatCmd(options.repository, options.target_fnmatches,
+              options.clang_format, options.force).exec()
+
+def finalize_clang_format(options):
+    binary = (options.clang_executables['clang-format'] if
+              hasattr(options, 'clang_executables') else
+              ClangFind().best('clang-format'))
+    style_path = (options.style_file if options.style_file else
+                  os.path.join(str(options.repository),
+                               REPO_INFO['style_file']))
+    options.clang_format = ClangFormat(binary, style_path)
+
 
 if __name__ == "__main__":
-    # parse arguments
-    description = ("A utility for invoking clang-format to observe the state "
-                   "of C++ code formatting in the repository. It produces "
+    description = ("A utility for invoking clang-format to look at the C++ "
+                   "code formatting in the repository. It produces "
                    "reports of style metrics and also can apply formatting.")
     parser = argparse.ArgumentParser(description=description)
+    # three subcommand subparsers:
+    subparsers = parser.add_subparsers()
+    report_help = ("Produces a report with the analysis of the selected"
+                   "targets taken as a group.")
+    report_parser = subparsers.add_parser('report', help=report_help)
+    report_parser.set_defaults(func=report_cmd)
+    check_help = ("Validates that the selected targets match the style, gives "
+                  "a per-file report and returns a non-zero bash status if "
+                  "there are any format issues discovered.")
+    check_parser = subparsers.add_parser('check', help=check_help)
+    check_parser.set_defaults(func=check_cmd)
+    format_help = ("Applies the style formatting to the target files.")
+    format_parser = subparsers.add_parser('format', help=format_help)
+    format_parser.set_defaults(func=format_cmd)
+    # args for some of the subcommands:
+    j_help = ("Parallel jobs for computing diffs. (default=4)")
+    for p in [report_parser, check_parser]:
+        p.add_argument("-j", "--jobs", type=int, default=4, help=j_help)
+    f_help = ("Force proceeding with if clang-format doesn't support all "
+              "parameters in the style file. (default=False)")
+    for p in [check_parser, format_parser]:
+        p.add_argument("-f", "--force", action='store_true', help=f_help)
+    json_help = ("Print output in json format. (default=False)")
+    for p in [report_parser, check_parser]:
+        p.add_argument("--json", action='store_true', help=json_help)
+    # args for all of the subcommands:
+    parsers = [report_parser, check_parser, format_parser]
     b_help = ("The path to the clang dirctory or binary to be used for "
               "clang-format. (default=The clang-format installed in PATH with "
               "the highest version number)")
-    parser.add_argument("-b", "--bin-path", type=str,
-                        action=ClangDirectoryAction, help=b_help)
+    for p in parsers:
+        p.add_argument("-b", "--bin-path", type=str,
+                       action=ClangDirectoryAction, help=b_help)
     sf_help = ("The path to the style file to be used. (default=The "
                "src/.clang_format file of the repository which holds the "
                "targets)")
-    parser.add_argument("-s", "--style-file", type=str,
-                        action=ReadableFileAction, help=sf_help)
-    j_help = ("Parallel jobs for computing diffs. (default=4)")
-    parser.add_argument("-j", "--jobs", type=int, default=4, help=j_help)
-    f_help = ("Force proceeding with 'check' or 'format' if clang-format "
-              "doesn't support all parameters in the style file. "
-              "(default=False)")
-    parser.add_argument("-f", "--force", action='store_true', help=f_help)
-    s_help = ("Selects the action to be taken. 'report' produces a report "
-              "with analysis of the selected files taken as a group. 'check' "
-              "validates that the selected files match the style and gives "
-              "a per-file report and returns a non-zero bash status if there "
-              "are any format issues discovered. 'format' applies the style "
-              "formatting to the selected files.")
-    parser.add_argument("subcommand", type=str,
-                        choices=['report', 'check', 'format'], help=s_help)
+    for p in parsers:
+        p.add_argument("-s", "--style-file", type=str,
+                       action=ReadableFileAction, help=sf_help)
     t_help = ("A list of files and/or directories that select the subset of "
               "files for this action. If a directory is given as a target, "
               "all files contained in it and its subdirectories are "
               "recursively selected. All targets must be tracked in the same "
               "git repository clone. (default=The current directory)")
-    parser.add_argument("target", type=str, action=GitTrackedTargetsAction,
-                        nargs='*', default=['.'], help=t_help)
-    opts = parser.parse_args()
-
-    # find clang-format binary and style
-    binary = (opts.clang_executables['clang-format'] if
-              hasattr(opts, 'clang_executables') else
-              ClangFind().best('clang-format'))
-    style_path = (opts.style_file if opts.style_file else
-                  os.path.join(str(opts.repository), REPO_INFO['style_file']))
-    opts.clang_format = ClangFormat(binary, style_path)
-
-    # execute commands
-    if opts.subcommand == 'report':
-        ReportCmd(opts.repository, opts.jobs, opts.target_fnmatches, False,
-                  opts.clang_format, style_path).exec()
-    elif opts.subcommand == 'check':
-        CheckCmd(opts.repository, opts.jobs, opts.target_fnmatches, False,
-                 opts.clang_format, style_path, False).exec()
-    else:
-        FormatCmd(opts.repository, opts.jobs, opts.target_fnmatches,
-                  opts.clang_format, style_path, False).exec()
+    for p in parsers:
+        p.add_argument("target", type=str, action=GitTrackedTargetsAction,
+                       nargs='*', default=['.'], help=t_help)
+    # parse and execute:
+    options = parser.parse_args()
+    finalize_clang_format(options)
+    options.func(options)

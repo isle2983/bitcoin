@@ -4,6 +4,7 @@
 # file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
 import time
+import json
 from framework.report import Report
 from framework.file_filter import FileFilter
 from framework.file_info import FileInfos
@@ -63,11 +64,17 @@ class FileContentCmd(object):
         return (f for f in tracked_files if file_filter.evaluate(f))
 
 
+    def _read_file_infos(self):
+        self.file_infos.read_all()
+
+    def _compute_file_infos(self):
+        self.file_infos.compute_all()
+
     def _read_and_compute_file_infos(self):
         start_time = time.time()
         self.file_infos = FileInfos(self.jobs, self._file_info_list())
-        self.file_infos.read_all()
-        self.file_infos.compute_all()
+        self._read_file_infos()
+        self._compute_file_infos()
         self.elapsed_time = time.time() - start_time
 
     def _analysis(self):
