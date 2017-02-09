@@ -10,18 +10,9 @@ import argparse
 from framework.path import Path
 
 
-class GitRepository(object):
-    def __init__(self, repository_base):
-        self.repository_base = repository_base
-
-    def __str__(self):
-        return self.repository_base
-
-    def tracked_files(self):
-        out = subprocess.check_output(['git', 'ls-files'])
-        return [os.path.join(self.repository_base, f) for f in
-                out.decode("utf-8").split('\n') if f != '']
-
+###############################################################################
+# path in repository
+###############################################################################
 
 class GitPath(Path):
     """
@@ -31,7 +22,7 @@ class GitPath(Path):
     def _in_git_repository(self):
         cmd = 'git -C %s status' % self.directory()
         dn = open(os.devnull, 'w')
-        return subprocess.call(cmd.split(' '), stderr=dn, stdout=dn) == 0;
+        return subprocess.call(cmd.split(' '), stderr=dn, stdout=dn) == 0
 
     def assert_in_git_repository(self):
         if not self._in_git_repository():
@@ -58,6 +49,37 @@ class GitPath(Path):
         return recurse_repo_base_dir(self)
 
 
+###############################################################################
+# repository
+###############################################################################
+
+class GitRepository(object):
+    """
+    Represents and queries information from a git repository clone.
+    """
+    def __init__(self, repository_base):
+        self.repository_base = repository_base
+        git_path = GitPath(repository_base)
+        git_path.assert_exists()
+        git_path.assert_mode(os.R_OK)
+        git_path.assert_in_git_repository()
+        if str(self.repository_base) != str(git_path.repository_base()):
+            sys.exit("*** %s is not the base of its repository" %
+                     self.repository_base)
+
+    def __str__(self):
+        return self.repository_base
+
+    def tracked_files(self):
+        out = subprocess.check_output(['git', 'ls-files'])
+        return [os.path.join(self.repository_base, f) for f in
+                out.decode("utf-8").split('\n') if f != '']
+
+
+###############################################################################
+# getting a list of target fnmatches in a repo from args
+###############################################################################
+
 class GitTrackedTargetsAction(argparse.Action):
     """
     Validate that 'values' is a list of strings that all represent files or
@@ -65,12 +87,12 @@ class GitTrackedTargetsAction(argparse.Action):
     """
     def _check_values(self, values):
         if not isinstance(values, list):
-            os.exit("*** %s is not a list" % values)
+            sys.exit("*** %s is not a list" % values)
         types = [type(value) for value in values]
         if len(set(types)) != 1:
-            os.exit("*** %s has multiple object types" % values)
+            sys.exit("*** %s has multiple object types" % values)
         if not isinstance(values[0], str):
-            os.exit("*** %s does not contain strings" % values)
+            sys.exit("*** %s does not contain strings" % values)
 
     def _get_targets(self, values):
         targets = [GitPath(value) for value in values]
@@ -98,4 +120,15 @@ class GitTrackedTargetsAction(argparse.Action):
         target_directories = [os.path.join(str(namespace.repository), str(t))
                               for t in targets if t.is_directory()]
         namespace.target_fnmatches = (target_files +
-            [os.path.join(d, '*') for d in target_directories])
+                                      [os.path.join(d, '*') for d in
+                                       target_directories])
+
+
+def add_git_tracked_targets_arg(parser):
+    t_help = ("A list of files and/or directories that select the subset of "
+              "files for this action. If a directory is given as a target, "
+              "all files contained in it and its subdirectories are "
+              "recursively selected. All targets must be tracked in the same "
+              "git repository clone. (default=The current directory)")
+    parser.add_argument("target", type=str, action=GitTrackedTargetsAction,
+                        nargs='*', default=['.'], help=t_help)

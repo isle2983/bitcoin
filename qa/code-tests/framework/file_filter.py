@@ -7,6 +7,7 @@ import re
 import os
 import fnmatch
 
+
 class FileFilter(object):
     """
     Wraps and untilizes regular expression to quickly evaluate whether a path
@@ -39,10 +40,8 @@ class FileFilter(object):
     def _evaluate_layers(self, path):
         for layer in self.layers:
             if layer['layer_type'] is 'include':
-                #print("ilayer %s" % self._matches_regex(path, layer['regex']))
                 yield self._matches_regex(path, layer['regex'])
             if layer['layer_type'] is 'exclude':
-                #print("elayer %s" % self._matches_regex(path, layer['regex']))
                 yield not self._matches_regex(path, layer['regex'])
 
     def evaluate(self, path):

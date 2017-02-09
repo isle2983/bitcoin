@@ -6,11 +6,12 @@
 import sys
 import os
 from multiprocessing import Pool
-from framework.file import read_file, write_file
+from framework.io import read_file, write_file
 
 ###############################################################################
 # single file
 ###############################################################################
+
 
 class FileInfo(dict):
     """

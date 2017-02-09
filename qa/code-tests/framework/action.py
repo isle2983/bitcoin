@@ -4,6 +4,7 @@
 # file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
 import os
+import sys
 import argparse
 from framework.path import Path
 
@@ -15,7 +16,7 @@ class ReadableFileAction(argparse.Action):
     """
     def __call__(self, parser, namespace, values, option_string=None):
         if not isinstance(values, str):
-            os.exit("*** %s is not a string" % values)
+            sys.exit("*** %s is not a string" % values)
         self.path = Path(values)
         self.path.assert_exists()
         self.path.assert_is_file()
@@ -29,7 +30,7 @@ class ExecutableBinaryAction(argparse.Action):
     """
     def __call__(self, parser, namespace, values, option_string=None):
         if not isinstance(values, str):
-            os.exit("*** %s is not a string" % values)
+            sys.exit("*** %s is not a string" % values)
         self.path = Path(values)
         self.path.assert_exists()
         self.path.assert_is_file()

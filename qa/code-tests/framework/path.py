@@ -7,10 +7,12 @@ import sys
 import os
 import subprocess
 
+
 class Path(object):
     """
     Base class for representing and validating command-line arguments that
-    are strings but supposed to be a filesystem path with particular properties.
+    are strings but supposed to be a filesystem path with particular
+    properties.
     """
     def __init__(self, path):
         self.path = self._get_real_path(str(path))
@@ -61,7 +63,8 @@ class Path(object):
 
     def assert_has_filename(self, filename):
         if not self.has_filename(filename):
-            sys.exit("*** %s does not have filename %s" % (self.path, filename))
+            sys.exit("*** %s does not have filename %s" % (self.path,
+                                                           filename))
 
     def containing_directory(self):
         return os.path.dirname(self.path)

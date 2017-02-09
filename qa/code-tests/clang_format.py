@@ -11,31 +11,33 @@ import difflib
 import hashlib
 
 from framework.report import Report
-from framework.action import ReadableFileAction
-from framework.clang import ClangDirectoryAction
-from framework.clang import ClangFind
-from framework.clang import ClangFormat
-from framework.git import GitTrackedTargetsAction
+from framework.clang import add_clang_format_args, clang_format_from_options
 from framework.file_info import FileInfo
 from framework.file_content_cmd import FileContentCmd
+from framework.args import add_jobs_arg
+from framework.args import add_force_arg
+from framework.args import add_json_arg
+from framework.git import add_git_tracked_targets_arg
 
 ###############################################################################
 # settings for the set of files that this applies to
 ###############################################################################
 
+SOURCE_FILES = ['*.cpp', '*.h']
+
 REPO_INFO = {
-    'source_files':             ['*.cpp', '*.h'],
-    'subtrees_to_ignore':       ['src/secp256k1/*',
+    'subtrees':                 ['src/secp256k1/*',
                                  'src/leveldb/*',
                                  'src/univalue/*',
                                  'src/crypto/ctaes/*'],
-    'style_file':               'src/.clang-format',
-    'recommended_clang_format': '3.9.0',
+    'clang_format_style'        'src/.clang-format',
+    'clang_format_recommended': '3.9.0',
 }
 
 ###############################################################################
 # scoring
 ###############################################################################
+
 
 class StyleScore(object):
     """
@@ -72,11 +74,13 @@ class StyleScore(object):
         # inclusive
         return (float(self.score) >= lower) and (float(self.score) <= upper)
 
+
 ###############################################################################
 # gather file and diff info
 ###############################################################################
 
 DIFFER = difflib.Differ()
+
 
 class ClangFormatFileInfo(FileInfo):
     """
@@ -112,7 +116,7 @@ class ClangFormatFileInfo(FileInfo):
             # major releases of clang-format. The recommendation should
             # probably follow the latest widely-available stable release.
             r.add("\nUsing clang-format version %s or higher is recommended\n"
-                  % REPO_INFO['recommended_clang_format'])
+                  % REPO_INFO['clang_format_recommended'])
             r.add("Use the --force option to override and proceed anyway.\n\n")
             r.flush()
             sys.exit("*** missing clang-format support.")
@@ -149,17 +153,19 @@ class ClangFormatFileInfo(FileInfo):
                                    self['post_format_lines'])
         self['diff_time'] = time.time() - start_time
 
+
 ###############################################################################
 # cmd base class
 ###############################################################################
 
-
 class ClangFormatCmd(FileContentCmd):
+    """
+    Common base class for the commands in this script.
+    """
     def __init__(self, repository, jobs, target_fnmatches, json, clang_format,
                  force):
-        super().__init__(repository, jobs, REPO_INFO['source_files'],
-                         REPO_INFO['subtrees_to_ignore'], target_fnmatches,
-                         json)
+        super().__init__(repository, jobs, SOURCE_FILES, REPO_INFO['subtrees'],
+                         target_fnmatches, json)
         self.clang_format = clang_format
         self.force = force
 
@@ -168,11 +174,15 @@ class ClangFormatCmd(FileContentCmd):
                                     self.force)
                 for f in self.files_targeted]
 
+
 ###############################################################################
 # report cmd
 ###############################################################################
 
 class ReportCmd(ClangFormatCmd):
+    """
+    'report' subcommand class.
+    """
     def __init__(self, repository, jobs, target_fnmatches, json, clang_format):
         super().__init__(repository, jobs, target_fnmatches, json,
                          clang_format, True)
@@ -213,7 +223,6 @@ class ReportCmd(ClangFormatCmd):
                            a['added_lines'], a['removed_lines'],
                            a['post_format_lines'])
         a['style_score'] = float(score)
-        a['style_scoreboard'] = str(score)
         a['slowest_diffs'] = [{'file_path': f['file_path'],
                                'diff_time': f['diff_time']} for f in
                               file_infos if f['diff_time'] > 1.0]
@@ -255,14 +264,27 @@ class ReportCmd(ClangFormatCmd):
                 score_range, a['files_in_ranges'][score_range]))
         r.separator()
         r.add("Overall scoring:\n\n")
-        r.add(a['style_scoreboard'])
+        score = StyleScore(a['pre_format_lines'], a['unchanged_lines'],
+                           a['added_lines'], a['removed_lines'],
+                           a['post_format_lines'])
+        r.add(str(score))
         r.separator()
         r.flush()
 
 
-def exec_report_cmd(options):
-    ReportCmd(options.repository, options.jobs, options.target_fnmatches,
-              options.json, options.clang_format).exec()
+def add_report_cmd(subparsers):
+    def exec_report_cmd(options):
+        ReportCmd(options.repository, options.jobs, options.target_fnmatches,
+                  options.json, options.clang_format).exec()
+
+    report_help = ("Produces a report with the analysis of the selected"
+                   "targets taken as a group.")
+    parser = subparsers.add_parser('report', help=report_help)
+    parser.set_defaults(func=exec_report_cmd)
+    add_jobs_arg(parser)
+    add_json_arg(parser)
+    add_clang_format_args(parser)
+    add_git_tracked_targets_arg(parser)
 
 
 ###############################################################################
@@ -270,6 +292,9 @@ def exec_report_cmd(options):
 ###############################################################################
 
 class CheckCmd(ClangFormatCmd):
+    """
+    'check' subcommand class.
+    """
     def __init__(self, repository, jobs, target_fnmatches, json, clang_format,
                  force):
         super().__init__(repository, jobs, target_fnmatches, json,
@@ -279,7 +304,6 @@ class CheckCmd(ClangFormatCmd):
         a = super()._analysis()
         a['failures'] = [{'file_path':         f['file_path'],
                           'style_score':       float(f['score']),
-                          'style_scoreboard':  str(f['score']),
                           'pre_format_lines':  f['pre_format_lines'],
                           'added_lines':       f['added_lines'],
                           'removed_lines':     f['removed_lines'],
@@ -295,16 +319,23 @@ class CheckCmd(ClangFormatCmd):
         for f in a['failures']:
             r.add("A code format issue was detected in ")
             r.add_red("%s\n\n" % f['file_path'])
-            r.add(f['style_scoreboard'])
+            score = StyleScore(f['pre_format_lines'], f['unchanged_lines'],
+                               f['added_lines'], f['removed_lines'],
+                               f['post_format_lines'])
+            r.add(str(score))
             r.separator()
         if len(a['failures']) == 0:
             r.add_green("No format issues found!\n")
         else:
-            r.add_red("These files can be auto-formatted by running:\n\n")
+            r.add_red("These files can be formatted by running:\n\n")
             r.add("\t$ clang_format.py format [option [option ...]] "
-                  "[file [file ...]]\n")
+                  "[file [file ...]]\n\n")
         r.separator()
         r.flush()
+
+    def _shell_exit(self):
+        return (0 if len(self.results) == 0 else
+                "*** code formatting issue found")
 
 
 def exec_check_cmd(options):
@@ -312,11 +343,31 @@ def exec_check_cmd(options):
              options.json, options.clang_format, options.force).exec()
 
 
+def add_check_cmd(subparsers):
+    def exec_check_cmd(options):
+        CheckCmd(options.repository, options.jobs, options.target_fnmatches,
+                 options.json, options.clang_format, options.force).exec()
+
+    check_help = ("Validates that the selected targets match the style, gives "
+                  "a per-file report and returns a non-zero bash status if "
+                  "there are any format issues discovered.")
+    parser = subparsers.add_parser('check', help=check_help)
+    parser.set_defaults(func=exec_check_cmd)
+    add_jobs_arg(parser)
+    add_json_arg(parser)
+    add_force_arg(parser)
+    add_clang_format_args(parser)
+    add_git_tracked_targets_arg(parser)
+
+
 ###############################################################################
 # format cmd
 ###############################################################################
 
 class FormatCmd(ClangFormatCmd):
+    """
+    'format' subcommand class.
+    """
     def __init__(self, repository, target_fnmatches, clang_format, force):
         super().__init__(repository, 1, target_fnmatches, False, clang_format,
                          force)
@@ -337,9 +388,17 @@ class FormatCmd(ClangFormatCmd):
         self.file_infos.write_all()
 
 
-def exec_format_cmd(options):
-    FormatCmd(options.repository, options.target_fnmatches,
-              options.clang_format, options.force).exec()
+def add_format_cmd(subparsers):
+    def exec_format_cmd(options):
+        FormatCmd(options.repository, options.target_fnmatches,
+                  options.clang_format, options.force).exec()
+
+    format_help = ("Applies the style formatting to the target files.")
+    parser = subparsers.add_parser('format', help=format_help)
+    parser.set_defaults(func=exec_format_cmd)
+    add_force_arg(parser)
+    add_clang_format_args(parser)
+    add_git_tracked_targets_arg(parser)
 
 
 ###############################################################################
@@ -347,69 +406,16 @@ def exec_format_cmd(options):
 ###############################################################################
 
 
-def finalize_clang_format(options):
-    binary = (options.clang_executables['clang-format'] if
-              hasattr(options, 'clang_executables') else
-              ClangFind().best('clang-format'))
-    style_path = (options.style_file if options.style_file else
-                  os.path.join(str(options.repository),
-                               REPO_INFO['style_file']))
-    options.clang_format = ClangFormat(binary, style_path)
-
-
 if __name__ == "__main__":
     description = ("A utility for invoking clang-format to look at the C++ "
                    "code formatting in the repository. It produces "
                    "reports of style metrics and also can apply formatting.")
     parser = argparse.ArgumentParser(description=description)
-    # three subcommand subparsers:
     subparsers = parser.add_subparsers()
-    report_help = ("Produces a report with the analysis of the selected"
-                   "targets taken as a group.")
-    report_parser = subparsers.add_parser('report', help=report_help)
-    report_parser.set_defaults(func=exec_report_cmd)
-    check_help = ("Validates that the selected targets match the style, gives "
-                  "a per-file report and returns a non-zero bash status if "
-                  "there are any format issues discovered.")
-    check_parser = subparsers.add_parser('check', help=check_help)
-    check_parser.set_defaults(func=exec_check_cmd)
-    format_help = ("Applies the style formatting to the target files.")
-    format_parser = subparsers.add_parser('format', help=format_help)
-    format_parser.set_defaults(func=exec_format_cmd)
-    # args for some of the subcommands:
-    j_help = ("Parallel jobs for computing diffs. (default=4)")
-    for p in [report_parser, check_parser]:
-        p.add_argument("-j", "--jobs", type=int, default=4, help=j_help)
-    f_help = ("Force proceeding with if clang-format doesn't support all "
-              "parameters in the style file. (default=False)")
-    for p in [check_parser, format_parser]:
-        p.add_argument("-f", "--force", action='store_true', help=f_help)
-    json_help = ("Print output in json format. (default=False)")
-    for p in [report_parser, check_parser]:
-        p.add_argument("--json", action='store_true', help=json_help)
-    # args for all of the subcommands:
-    parsers = [report_parser, check_parser, format_parser]
-    b_help = ("The path to the clang dirctory or binary to be used for "
-              "clang-format. (default=The clang-format installed in PATH with "
-              "the highest version number)")
-    for p in parsers:
-        p.add_argument("-b", "--bin-path", type=str,
-                       action=ClangDirectoryAction, help=b_help)
-    sf_help = ("The path to the style file to be used. (default=The "
-               "src/.clang_format file of the repository which holds the "
-               "targets)")
-    for p in parsers:
-        p.add_argument("-s", "--style-file", type=str,
-                       action=ReadableFileAction, help=sf_help)
-    t_help = ("A list of files and/or directories that select the subset of "
-              "files for this action. If a directory is given as a target, "
-              "all files contained in it and its subdirectories are "
-              "recursively selected. All targets must be tracked in the same "
-              "git repository clone. (default=The current directory)")
-    for p in parsers:
-        p.add_argument("target", type=str, action=GitTrackedTargetsAction,
-                       nargs='*', default=['.'], help=t_help)
-    # parse and execute:
+    add_report_cmd(subparsers)
+    add_check_cmd(subparsers)
+    add_format_cmd(subparsers)
     options = parser.parse_args()
-    finalize_clang_format(options)
+    options.clang_format = (
+        clang_format_from_options(options, REPO_INFO['clang_format_style']))
     options.func(options)

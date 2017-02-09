@@ -5,9 +5,11 @@
 
 import time
 import json
+import sys
 from framework.report import Report
 from framework.file_filter import FileFilter
 from framework.file_info import FileInfos
+
 
 class FileContentCmd(object):
     """
@@ -63,7 +65,6 @@ class FileContentCmd(object):
                                           exclude_fnmatches, target_fnmatches)
         return (f for f in tracked_files if file_filter.evaluate(f))
 
-
     def _read_file_infos(self):
         self.file_infos.read_all()
 
@@ -77,6 +78,9 @@ class FileContentCmd(object):
         self._compute_file_infos()
         self.elapsed_time = time.time() - start_time
 
+    def _write_files(self):
+        pass
+
     def _analysis(self):
         a = {}
         a['tracked_files'] = len(self.tracked_files)
@@ -89,7 +93,7 @@ class FileContentCmd(object):
         a = self.results
         r.separator()
         r.add("%4d files tracked in repo\n" % a['tracked_files'])
-        r.add("%4d files in scope according to REPO_INFO settings\n" %
+        r.add("%4d files in scope according to script settings\n" %
               a['files_in_scope'])
         r.add("%4d files examined according to listed targets\n" %
               a['files_targeted'])
@@ -98,11 +102,12 @@ class FileContentCmd(object):
     def _json_print(self):
         print(json.dumps(self.results))
 
-    def _write_files(self):
-        pass
+    def _shell_exit(self):
+        return 0
 
     def exec(self):
         self._read_and_compute_file_infos()
         self._write_files()
         self.results = self._analysis()
         self._json_print() if self.json else self._human_print()
+        sys.exit(self._shell_exit())

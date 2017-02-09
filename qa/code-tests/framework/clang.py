@@ -5,11 +5,13 @@
 
 import re
 import os
+import sys
 import subprocess
 import argparse
 from framework.path import Path
 from framework.action import ExecutableBinaryAction
-from framework.file import read_file, write_file
+from framework.action import ReadableFileAction
+from framework.io import read_file, write_file
 
 ###############################################################################
 # The clang binaries of interest to this framework
@@ -23,7 +25,7 @@ CLANG_BINARIES = ['clang-format', 'scan-build', 'scan-view']
 
 # the method of finding the version of a particluar binary:
 ASK_FOR_VERSION = ['clang-format']
-VERSION_FROM_PATH= ['scan-build', 'scan-view']
+VERSION_FROM_PATH = ['scan-build', 'scan-view']
 
 assert set(ASK_FOR_VERSION + VERSION_FROM_PATH) == set(CLANG_BINARIES)
 
@@ -33,7 +35,11 @@ VERSION_ASK_REGEX = re.compile("version (?P<version>[0-9]\.[0-9](\.[0-9])?)")
 # Find the version in the name of a containing subdirectory.
 VERSION_PATH_REGEX = re.compile("(?P<version>[0-9]\.[0-9](\.[0-9])?)")
 
+
 class ClangVersion(object):
+    """
+    Obtains and represents the version of a particular clang binary.
+    """
     def __init__(self, binary_path):
         p = Path(binary_path)
         if p.filename() in ASK_FOR_VERSION:
@@ -46,7 +52,7 @@ class ClangVersion(object):
 
     def _version_from_asking(self, binary_path):
         p = subprocess.Popen([str(binary_path), '--version'],
-                              stdout=subprocess.PIPE)
+                             stdout=subprocess.PIPE)
         match = VERSION_ASK_REGEX.search(p.stdout.read().decode('utf-8'))
         if not match:
             return "0.0.0"
@@ -57,6 +63,7 @@ class ClangVersion(object):
         if not match:
             return "0.0.0"
         return match.group('version')
+
 
 ###############################################################################
 # find usable clang binaries
@@ -126,8 +133,9 @@ class ClangFind(object):
 
 
 ###############################################################################
-# argparse action for a clang binary directory
+# argparse utilities
 ###############################################################################
+
 
 class ClangDirectoryAction(argparse.Action):
     """
@@ -138,12 +146,12 @@ class ClangDirectoryAction(argparse.Action):
     """
     def __call__(self, parser, namespace, values, option_string=None):
         if not isinstance(values, str):
-            os.exit("*** %s is not a string" % values)
+            sys.exit("*** %s is not a string" % values)
         namespace.clang_executables = ClangFind(values).best_binaries()
 
 
 ###############################################################################
-# clang-format classes
+# style
 ###############################################################################
 
 class ClangFormatStyle(object):
@@ -166,8 +174,8 @@ class ClangFormatStyle(object):
         return self.file_path
 
     def _parse_parameters(self):
-        # Python does not have a built-in yaml parser, so here is a hand-written
-        # one that *seems* to minimally work for this purpose.
+        # Python does not have a built-in yaml parser, so here is a
+        # hand-written one that *seems* to minimally work for this purpose.
         many_spaces = re.compile(': +')
         spaces_removed = many_spaces.sub(':', self.raw_contents)
         # split into a list of lines
@@ -186,7 +194,15 @@ class ClangFormatStyle(object):
                                           self.parameters.items()])
 
 
+###############################################################################
+# clang format class
+###############################################################################
+
 class ClangFormat(object):
+    """
+    Facility to read in the formatted content of a file using a particular
+    clang-format binary and style file.
+    """
     def __init__(self, binary, style_path):
         self.binary_path = binary['path']
         self.binary_version = binary['version']
@@ -229,3 +245,30 @@ class ClangFormat(object):
 
     def rejected_parameters(self):
         return self.style.rejected_parameters
+
+
+###############################################################################
+# getting a clang format class from args
+###############################################################################
+
+
+def add_clang_format_args(parser):
+    b_help = ("path to the clang directory or binary to be used "
+              "(default=The required clang binary installed in PATH with the "
+              "highest version number)")
+    sf_help = ("path to the clang style file to be used (default=The "
+               "src/.clang_format file of the repository which holds the "
+               "targets)")
+    parser.add_argument("-b", "--bin-path", type=str,
+                        action=ClangDirectoryAction, help=b_help)
+    parser.add_argument("-s", "--style-file", type=str,
+                        action=ReadableFileAction, help=sf_help)
+
+
+def clang_format_from_options(options, style_file_default):
+    binary = (options.clang_executables['clang-format'] if
+              hasattr(options, 'clang_executables') else
+              ClangFind().best('clang-format'))
+    style_path = (options.style_file if options.style_file else
+                  os.path.join(str(options.repository), style_file_default))
+    return ClangFormat(binary, style_path)
