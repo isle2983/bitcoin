@@ -5,9 +5,7 @@
 
 import sys
 import os
-import time
 import argparse
-import difflib
 import hashlib
 
 from framework.report import Report
@@ -18,6 +16,7 @@ from framework.args import add_jobs_arg
 from framework.args import add_force_arg
 from framework.args import add_json_arg
 from framework.git import add_git_tracked_targets_arg
+from framework.style import StyleDiff, StyleScore
 
 ###############################################################################
 # settings for the set of files that this applies to
@@ -30,57 +29,13 @@ REPO_INFO = {
                                  'src/leveldb/*',
                                  'src/univalue/*',
                                  'src/crypto/ctaes/*'],
-    'clang_format_style'        'src/.clang-format',
+    'clang_format_style':       'src/.clang-format',
     'clang_format_recommended': '3.9.0',
 }
 
 ###############################################################################
-# scoring
-###############################################################################
-
-
-class StyleScore(object):
-    """
-    A crude calculation to give a percentage rating for adherence to the
-    defined style.
-    """
-    def __init__(self, pre_format, unchanged, added, removed, post_format):
-        self.pre_format = pre_format
-        self.unchanged = unchanged
-        self.added = added
-        self.removed = removed
-        self.post_format = post_format
-        self.score = (100.0 if (added + removed) == 0 else
-                      min(abs(1.0 - (float(pre_format - unchanged) /
-                                     float(pre_format))) * 100, 99.0))
-
-    def __str__(self):
-        return (" +--------+         +------------+--------+---------+--------"
-                "---+-------------+\n"
-                " | score  |         | pre-format |  added | removed | unchang"
-                "ed | post-format |\n"
-                " +--------+ +-------+------------+--------+---------+--------"
-                "---+-------------+\n"
-                " | %3.2f%% | | lines | %10d | %6d | %7d | %9d | %11d |\n"
-                " +--------+ +-------+------------+--------+---------+--------"
-                "---+-------------+\n" % (self.score, self.pre_format,
-                                          self.added, self.removed,
-                                          self.unchanged, self.post_format))
-
-    def __float__(self):
-        return self.score
-
-    def in_range(self, lower, upper):
-        # inclusive
-        return (float(self.score) >= lower) and (float(self.score) <= upper)
-
-
-###############################################################################
 # gather file and diff info
 ###############################################################################
-
-DIFFER = difflib.Differ()
-
 
 class ClangFormatFileInfo(FileInfo):
     """
@@ -121,37 +76,11 @@ class ClangFormatFileInfo(FileInfo):
             r.flush()
             sys.exit("*** missing clang-format support.")
 
-    def _sum_lines_of_type(self, diff):
-        def classify_diff_lines(diff):
-            for l in diff:
-                if l.startswith('  '):
-                    yield 1, 0, 0
-                elif l.startswith('+ '):
-                    yield 0, 1, 0
-                elif l.startswith('- '):
-                    yield 0, 0, 1
-
-        return (sum(c) for c in zip(*classify_diff_lines(diff)))
-
     def compute(self):
         self['matching'] = self['content'] == self['formatted']
         self['formatted_md5'] = (
             hashlib.md5(self['formatted'].encode('utf-8')).hexdigest())
-        pre_format_lines = self['content'].splitlines()
-        post_format_lines = self['formatted'].splitlines()
-        self['pre_format_lines'] = len(pre_format_lines)
-        self['post_format_lines'] = len(post_format_lines)
-        start_time = time.time()
-        diff = DIFFER.compare(pre_format_lines, post_format_lines)
-        (self['unchanged_lines'],
-         self['added_lines'],
-         self['removed_lines']) = self._sum_lines_of_type(diff)
-        self['score'] = StyleScore(self['pre_format_lines'],
-                                   self['unchanged_lines'],
-                                   self['added_lines'],
-                                   self['removed_lines'],
-                                   self['post_format_lines'])
-        self['diff_time'] = time.time() - start_time
+        self.update(StyleDiff(self['content'], self['formatted']))
 
 
 ###############################################################################
@@ -213,15 +142,14 @@ class ReportCmd(ClangFormatCmd):
         a['rejected_parameters'] = self.clang_format.style.rejected_parameters
         a['jobs'] = self.jobs
         a['elapsed_time'] = self.elapsed_time
-        a['pre_format_lines'] = sum(f['pre_format_lines'] for f in file_infos)
-        a['added_lines'] = sum(f['added_lines'] for f in file_infos)
-        a['removed_lines'] = sum(f['removed_lines'] for f in file_infos)
-        a['unchanged_lines'] = sum(f['unchanged_lines'] for f in file_infos)
-        a['post_format_lines'] = sum(f['post_format_lines'] for f in
-                                     file_infos)
-        score = StyleScore(a['pre_format_lines'], a['unchanged_lines'],
-                           a['added_lines'], a['removed_lines'],
-                           a['post_format_lines'])
+        a['lines_before'] = sum(f['lines_before'] for f in file_infos)
+        a['lines_added'] = sum(f['lines_added'] for f in file_infos)
+        a['lines_removed'] = sum(f['lines_removed'] for f in file_infos)
+        a['lines_unchanged'] = sum(f['lines_unchanged'] for f in file_infos)
+        a['lines_after'] = sum(f['lines_after'] for f in file_infos)
+        score = StyleScore(a['lines_before'], a['lines_added'],
+                           a['lines_removed'], a['lines_unchanged'],
+                           a['lines_after'])
         a['style_score'] = float(score)
         a['slowest_diffs'] = [{'file_path': f['file_path'],
                                'diff_time': f['diff_time']} for f in
@@ -264,9 +192,9 @@ class ReportCmd(ClangFormatCmd):
                 score_range, a['files_in_ranges'][score_range]))
         r.separator()
         r.add("Overall scoring:\n\n")
-        score = StyleScore(a['pre_format_lines'], a['unchanged_lines'],
-                           a['added_lines'], a['removed_lines'],
-                           a['post_format_lines'])
+        score = StyleScore(a['lines_before'], a['lines_added'],
+                           a['lines_removed'], a['lines_unchanged'],
+                           a['lines_after'])
         r.add(str(score))
         r.separator()
         r.flush()
@@ -277,8 +205,8 @@ def add_report_cmd(subparsers):
         ReportCmd(options.repository, options.jobs, options.target_fnmatches,
                   options.json, options.clang_format).exec()
 
-    report_help = ("Produces a report with the analysis of the selected"
-                   "targets taken as a group.")
+    report_help = ("Produces a report with the analysis of the code format "
+                   "adherence of the selected targets taken as a group.")
     parser = subparsers.add_parser('report', help=report_help)
     parser.set_defaults(func=exec_report_cmd)
     add_jobs_arg(parser)
@@ -302,13 +230,13 @@ class CheckCmd(ClangFormatCmd):
 
     def _analysis(self):
         a = super()._analysis()
-        a['failures'] = [{'file_path':         f['file_path'],
-                          'style_score':       float(f['score']),
-                          'pre_format_lines':  f['pre_format_lines'],
-                          'added_lines':       f['added_lines'],
-                          'removed_lines':     f['removed_lines'],
-                          'unchanged_lines':   f['unchanged_lines'],
-                          'post_format_lines': f['post_format_lines']}
+        a['failures'] = [{'file_path':       f['file_path'],
+                          'style_score':     float(f['score']),
+                          'lines_before':    f['lines_before'],
+                          'lines_added':     f['lines_added'],
+                          'lines_removed':   f['lines_removed'],
+                          'lines_unchanged': f['lines_unchanged'],
+                          'lines_after':     f['lines_after']}
                          for f in self.file_infos if not f['matching']]
         return a
 
@@ -319,9 +247,9 @@ class CheckCmd(ClangFormatCmd):
         for f in a['failures']:
             r.add("A code format issue was detected in ")
             r.add_red("%s\n\n" % f['file_path'])
-            score = StyleScore(f['pre_format_lines'], f['unchanged_lines'],
-                               f['added_lines'], f['removed_lines'],
-                               f['post_format_lines'])
+            score = StyleScore(f['lines_before'], f['lines_added'],
+                               f['lines_removed'], f['lines_unchanged'],
+                               f['lines_after'])
             r.add(str(score))
             r.separator()
         if len(a['failures']) == 0:
@@ -349,7 +277,7 @@ def add_check_cmd(subparsers):
                  options.json, options.clang_format, options.force).exec()
 
     check_help = ("Validates that the selected targets match the style, gives "
-                  "a per-file report and returns a non-zero bash status if "
+                  "a per-file report and returns a non-zero shell status if "
                   "there are any format issues discovered.")
     parser = subparsers.add_parser('check', help=check_help)
     parser.set_defaults(func=exec_check_cmd)

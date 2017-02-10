@@ -4,21 +4,30 @@
 # file COPYING or http://www.opensource.org/licenses/mit-license.php.
 
 import re
-import fnmatch
 import sys
-import subprocess
-import datetime
 import os
 import itertools
+import argparse
 
-from framework.report import Report
+from framework.file_filter import FileFilter
+from framework.file_info import FileInfo
+from framework.file_content_cmd import FileContentCmd
+from framework.args import add_jobs_arg
+from framework.args import add_json_arg
+from framework.git import add_git_tracked_targets_arg
+from framework.style import StyleDiff
 
-R = Report()
+
+REPO_INFO = {
+    'subtrees': ['src/secp256k1/*',
+                 'src/leveldb/*',
+                 'src/univalue/*',
+                 'src/crypto/ctaes/*'],
+}
 
 ###############################################################################
 # style rules
 ###############################################################################
-
 
 STYLE_RULES = [
     {'title':   'No tabstops',
@@ -43,90 +52,33 @@ STYLE_RULES = [
      'fix':     ';\n'},
 ]
 
-for rule in STYLE_RULES:
-    rule['regex_compiled'] = re.compile(rule['regex'])
-    rule['applies_compiled'] = re.compile('|'.join([fnmatch.translate(f) for f
-                                                    in rule['applies']]))
+SOURCE_FILES = list(set(itertools.chain(*[r['applies'] for r in STYLE_RULES])))
 
+class BasicStyleRules(object):
+    def __init__(self, repository):
+        self.repository = repository
+        self.rules = STYLE_RULES
+        for rule in self:
+            rule['regex_compiled'] = re.compile(rule['regex'])
+            rule['filter'] = FileFilter()
+            rule['filter'].append_include(rule['applies'],
+                                          base_path=str(self.repository))
 
-###############################################################################
-# files we want exempt from these rules
-###############################################################################
+    def __iter__(self):
+        return (rule for rule in self.rules)
 
+    def rules_that_apply(self, file_path):
+        return (rule for rule in self.rules if
+                rule['filter'].evaluate(file_path))
 
-ALWAYS_IGNORE = [
-    # files in subtrees:
-    'src/secp256k1/*',
-    'src/leveldb/*',
-    'src/univalue/*',
-    'src/crypto/ctaes/*',
-]
-
-ALWAYS_IGNORE_COMPILED = re.compile('|'.join([fnmatch.translate(match)
-                                              for match in ALWAYS_IGNORE]))
-
-
-###############################################################################
-# obtain list of files in repo to check that match extensions
-###############################################################################
-
-
-GIT_LS_CMD = 'git ls-files'
-
-
-def git_ls():
-    out = subprocess.check_output(GIT_LS_CMD.split(' '))
-    return [f for f in out.decode("utf-8").split('\n') if f != '']
-
-
-APPLIES_FILTER = set(itertools.chain(*[r['applies'] for r in STYLE_RULES]))
-APPLIES_FILTER_COMPILED = re.compile('|'.join([fnmatch.translate(a) for a in
-                                               APPLIES_FILTER]))
-
-
-def filename_is_to_be_examined(filename):
-    return (APPLIES_FILTER_COMPILED.match(filename) and not
-            ALWAYS_IGNORE_COMPILED.match(filename))
-
-
-def get_filenames_to_examine(full_file_list):
-    return sorted([filename for filename in full_file_list if
-                   filename_is_to_be_examined(filename)])
-
-
-###############################################################################
-# file IO
-###############################################################################
-
-
-def read_file(filename):
-    file = open(os.path.abspath(filename), 'r')
-    contents = file.read()
-    file.close()
-    return contents
-
-
-def write_file(filename, contents):
-    file = open(os.path.abspath(filename), 'w')
-    file.write(contents)
-    file.close()
+    def rules_that_dont_apply(self, file_path):
+        return (rule for rule in self.rules if not
+                rule['filter'].evaluate(file_path))
 
 
 ###############################################################################
 # gather file info
 ###############################################################################
-
-
-def find_line_of_match(contents, match):
-    line = {}
-    contents_before_match = contents[:match.start()]
-    contents_after_match = contents[match.end() - 1:]
-    line_start_char = contents_before_match.rfind('\n') + 1
-    line_end_char = match.end() + contents_after_match.find('\n')
-    line['contents'] = contents[line_start_char:line_end_char]
-    line['number'] = contents_before_match.count('\n') + 1
-    line['character'] = match.start() - line_start_char + 1
-    return line
 
 
 def find_failures_for_rule(file_info, rule):
@@ -226,35 +178,6 @@ def exec_report(base_directory):
 
 
 ###############################################################################
-# report cmd
-###############################################################################
-
-
-REPORT_USAGE = """
-Produces a summary report of all basic style issues found in the repository
-according to the rules of the script.
-
-Usage:
-    $ ./basic_style.py report <base_directory>
-
-Arguments:
-    <base_directory> - The base directory of a bitcoin core source code
-    repository.
-"""
-
-
-def report_cmd(argv):
-    if len(argv) != 3:
-        sys.exit(REPORT_USAGE)
-
-    base_directory = argv[2]
-    if not os.path.exists(base_directory):
-        sys.exit("*** bad <base_directory>: %s" % base_directory)
-
-    exec_report(base_directory)
-
-
-###############################################################################
 # check execution
 ###############################################################################
 
@@ -307,37 +230,6 @@ def exec_check(base_directory):
 
 
 ###############################################################################
-# check cmd
-###############################################################################
-
-
-CHECK_USAGE = """
-Checks over the repository for any basic code style issues as defined by the
-rules of this script. Returns a non-zero status if there are any issues found.
-Also, a report is printed specifically identifying which file and lines are
-problematic so that the can be fixed.
-
-Usage:
-    $ ./basic_style.py check <base_directory>
-
-Arguments:
-    <base_directory> - The base directory of a bitcoin core source code
-    repository.
-"""
-
-
-def check_cmd(argv):
-    if len(argv) != 3:
-        sys.exit(CHECK_USAGE)
-
-    base_directory = argv[2]
-    if not os.path.exists(base_directory):
-        sys.exit("*** bad <base_directory>: %s" % base_directory)
-
-    exec_check(base_directory)
-
-
-###############################################################################
 # fix execution
 ###############################################################################
 
@@ -383,32 +275,176 @@ def exec_fix(base_directory):
 
 
 ###############################################################################
+# file info
+###############################################################################
+
+class BasicStyleFileInfo(FileInfo):
+    """
+    Obtains and represents the information regarding a single file obtained
+    from clang-format.
+    """
+    def __init__(self, repository, file_path, rules):
+        super().__init__(repository, file_path)
+        self['rules_that_apply'] = list(rules.rules_that_apply(file_path))
+        self['rules_that_dont_apply'] = (
+            list(rules.rules_that_dont_apply(file_path)))
+
+    def _find_line_of_match(self, match):
+        contents_before_match = self['content'][:match.start()]
+        contents_after_match = self['content'][match.end() - 1:]
+        line_start_char = contents_before_match.rfind('\n') + 1
+        line_end_char = match.end() + contents_after_match.find('\n')
+        return {'context':   self['content'][line_start_char:line_end_char],
+                'number':    contents_before_match.count('\n') + 1,
+                'character': match.start() - line_start_char + 1}
+
+    def _find_failures(self):
+        for rule in self['rules_that_apply']:
+            matches = [match for match in
+                       rule['regex_compiled'].finditer(self['content']) if
+                       match is not None]
+            lines = [self._find_line_of_match(match) for match in matches]
+            for line in lines:
+                yield {'file_path':  self['file_path'],
+                       'content':    self['content'],
+                       'rule_title': rule['title'],
+                       'line':       line}
+
+    def compute(self):
+        # TODO:
+        self['fixed_content'] = self['content']
+        self.set_write_content(self['fixed_content'])
+
+        # diff info:
+        self.update(StyleDiff(self['content'], self['fixed_content']))
+
+        # failures info:
+        self['failures'] = list(self._find_failures())
+
+
+###############################################################################
+# cmd base class
+###############################################################################
+
+class BasicStyleCmd(FileContentCmd):
+    """
+    Common base class for the commands in this script.
+    """
+    def __init__(self, repository, jobs, target_fnmatches, json):
+        super().__init__(repository, jobs, SOURCE_FILES, REPO_INFO['subtrees'],
+                         target_fnmatches, json)
+        self.rules = BasicStyleRules(repository)
+
+    def _file_info_list(self):
+        return [BasicStyleFileInfo(self.repository, f, self.rules) for f in
+                self.files_targeted]
+
+###############################################################################
+# report cmd
+###############################################################################
+
+class ReportCmd(BasicStyleCmd):
+    """
+    'report' subcommand class.
+    """
+    def _analysis(self):
+        a = super()._analysis()
+        return a
+
+    def _human_print(self):
+        super()._human_print()
+
+    def _json_print(self):
+        super()._json_print()
+
+
+def add_report_cmd(subparsers):
+    def exec_report_cmd(options):
+        ReportCmd(options.repository, options.jobs,
+                  options.target_fnmatches, options.json).exec()
+
+    report_help = ("Valiates that the selected targets do not have basic style "
+                  "issues, give a per-file report and returns a non-zero "
+                  "shell status if there are any basic style issues "
+                  "discovered.")
+    parser = subparsers.add_parser('report', help=report_help)
+    parser.set_defaults(func=exec_report_cmd)
+    add_jobs_arg(parser)
+    add_json_arg(parser)
+    add_git_tracked_targets_arg(parser)
+
+###############################################################################
+# check cmd
+###############################################################################
+
+class CheckCmd(BasicStyleCmd):
+    """
+    'check' subcommand class.
+    """
+
+    def _analysis(self):
+        a = super()._analysis()
+        return a
+
+    def _human_print(self):
+        super()._human_print()
+
+    def _json_print(self):
+        super()._json_print()
+
+    def _shell_exit(self):
+        return (0 if len(self.results) == 0 else
+                "*** code formatting issue found")
+
+def add_check_cmd(subparsers):
+    def exec_check_cmd(options):
+        CheckCmd(options.repository, options.jobs,
+                 options.target_fnmatches, options.json).exec()
+
+    check_help = ("Valiates that the selected targets do not have basic style "
+                  "issues, give a per-file report and returns a non-zero "
+                  "shell status if there are any basic style issues "
+                  "discovered.")
+    parser = subparsers.add_parser('check', help=check_help)
+    parser.set_defaults(func=exec_check_cmd)
+    add_jobs_arg(parser)
+    add_json_arg(parser)
+    add_git_tracked_targets_arg(parser)
+
+###############################################################################
 # fix cmd
 ###############################################################################
 
+class FixCmd(BasicStyleCmd):
+    """
+    'fix' subcommand class.
+    """
+    def __init__(self, repository, jobs, target_fnmatches):
+        super().__init__(repository, jobs, target_fnmatches, False)
 
-FIX_USAGE = """
-Automatically edits files in the repository to fix up any basic style issues
-found with simple search-and-replace logic.
+    def _analysis(self):
+        return None
 
-Usage:
-    $ ./basic_style.py fix <base_directory>
+    def _human_print(self):
+        pass
 
-Arguments:
-    <base_directory> - The base directory of a bitcoin core source code
-    repository.
-"""
+    def _json_print(self):
+        pass
+
+    def _write_files(self):
+        self.file_infos.write_all()
 
 
-def fix_cmd(argv):
-    if len(argv) != 3:
-        sys.exit(FIX_USAGE)
+def add_fix_cmd(subparsers):
+    def exec_fix_cmd(options):
+        FixCmd(options.repository, options.jobs,
+               options.target_fnmatches).exec()
 
-    base_directory = argv[2]
-    if not os.path.exists(base_directory):
-        sys.exit("*** bad <base_directory>: %s" % base_directory)
-
-    exec_fix(base_directory)
+    fix_help = ("Applies basic style fixes to the target files.")
+    parser = subparsers.add_parser('fix', help=fix_help)
+    parser.set_defaults(func=exec_fix_cmd)
+    add_jobs_arg(parser)
+    add_git_tracked_targets_arg(parser)
 
 
 ###############################################################################
@@ -416,31 +452,16 @@ def fix_cmd(argv):
 ###############################################################################
 
 
-USAGE = """
-basic_style.py - utilities for checking basic style in source code files.
-
-Usage:
-    $ ./basic_style.py <subcommand>
-
-Subcommands:
-    report
-    check
-    fix
-
-To see subcommand usage, run them without arguments.
-"""
-
-SUBCOMMANDS = ['report', 'check', 'fix']
-
-
 if __name__ == "__main__":
-    if len(sys.argv) == 1:
-        sys.exit(USAGE)
-    if sys.argv[1] not in SUBCOMMANDS:
-        sys.exit(USAGE)
-    if sys.argv[1] == 'report':
-        report_cmd(sys.argv)
-    elif sys.argv[1] == 'check':
-        check_cmd(sys.argv)
-    elif sys.argv[1] == 'fix':
-        fix_cmd(sys.argv)
+    description = ("A utility for checking some basic style regexes against "
+                   "the contents of source files in the repository. It "
+                   "produces reports of style metrics and also can fix issues"
+                   "with simple search-and-replace logic.")
+    parser = argparse.ArgumentParser(description=description)
+    subparsers = parser.add_subparsers()
+    add_report_cmd(subparsers)
+    add_check_cmd(subparsers)
+    add_fix_cmd(subparsers)
+    options = parser.parse_args()
+    options.func(options)
+
