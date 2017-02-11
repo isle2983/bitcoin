@@ -71,9 +71,9 @@ class BasicStyleRules(object):
         return (rule for rule in self.rules if
                 rule['filter'].evaluate(file_path))
 
-    def rules_that_dont_apply(self, file_path):
-        return (rule for rule in self.rules if not
-                rule['filter'].evaluate(file_path))
+    def rule_with_title(self, title):
+        return next((rule for rule in self.rules if rule['title'] == title),
+                     None)
 
 
 ###############################################################################
@@ -87,9 +87,9 @@ class BasicStyleFileInfo(FileInfo):
     """
     def __init__(self, repository, file_path, rules):
         super().__init__(repository, file_path)
-        self['rules_that_apply'] = list(rules.rules_that_apply(file_path))
-        self['rules_that_dont_apply'] = (
-            list(rules.rules_that_dont_apply(file_path)))
+        self.rules = rules
+        self['rules_that_apply'] = list(self.rules.rules_that_apply(file_path))
+
 
     def _find_line_of_match(self, match):
         contents_before_match = self['content'][:match.start()]
@@ -110,18 +110,17 @@ class BasicStyleFileInfo(FileInfo):
                 yield {'file_path':  self['file_path'],
                        'content':    self['content'],
                        'rule_title': rule['title'],
-                       'line':       line,
-                       'fix':        {'regex':      rule['regex_compiled'],
-                                      'fix_string': rule['fix']}}
+                       'line':       line}
 
-    def _apply_fix(self, content, fix):
+    def _apply_fix(self, content, rule_title):
         # Multiple instances of a particular issue could be present. For
         # example, multiple spaces at the end of a line. So, we repeat the
         # search-and-replace until search matches are exhausted.
         fixed_content = content
         while True:
-            fixed_content, subs = fix['regex'].subn(fix['fix_string'],
-                                                    fixed_content)
+            rule = self.rules.rule_with_title(rule_title)
+            fixed_content, subs = rule['regex_compiled'].subn(rule['fix'],
+                                                              fixed_content)
             if subs == 0:
                 break
         return fixed_content
@@ -133,7 +132,8 @@ class BasicStyleFileInfo(FileInfo):
         # at the end of a line so the fix then creates whitespace at the end.
         # We repeat fix-up cycles until everything is cleared.
         while len(issues) > 0:
-            fixed_content = self._apply_fix(fixed_content, issues[0]['fix'])
+            fixed_content = self._apply_fix(fixed_content,
+                                            issues[0]['rule_title'])
             issues = list(self._find_issues(fixed_content))
         return fixed_content
 
@@ -260,40 +260,39 @@ class CheckCmd(BasicStyleCmd):
     def _analysis(self):
         a = super()._analysis()
         file_infos = self.file_infos
-        a['failures'] = itertools.chain.from_iterable(file_info['issues'] for
-                                                      file_info in file_infos))
-
-        a['rule_evaluation'] = {}
-        for rule in self.rules:
-            examined = sum(1 for f in file_infos if
-                           rule['filter'].evaluate(f['file_path']))
-            occurence_count = len([f for f in all_issues if
-                                   f['rule_title'] == rule['title']])
-            file_count = len(set([f['file_path'] for f in all_issues if
-                                  f['rule_title'] == rule['title']]))
-            a['rule_evaluation'][rule['title']] = (
-                {'extensions': rule['applies'], 'examined': examined,
-                 'files': file_count, 'occurences': occurence_count})
+        a['issues'] = list(
+            itertools.chain.from_iterable(f['issues'] for f in file_infos))
         return a
 
     def _human_print(self):
         super()._human_print()
         r = self.report
-        a = self.resultsd
-        for failure in a['failures']:
+        a = self.results
+        for issue in a['issues']:
             r.separator()
-            R.add("An issue was found with ")
-            R.add_red("%s\n" % failure['filename'])
-            R.add('Rule: "%s"\n\n' % failure['title'])
-            for line in failure['lines']:
-                R.add('line %d:\n' % line['number'])
-                R.add("%s" % line['contents'])
-                R.add(' ' * (line['character'] - 1))
-                R.add_red("^\n")
+            r.add("An issue was found with ")
+            r.add_red("%s\n" % issue['file_path'])
+            r.add('Rule: "%s"\n\n' % issue['rule_title'])
+            r.add('line %d:\n' % issue['line']['number'])
+            r.add("%s" % issue['line']['context'])
+            r.add(' ' *  (issue['line']['character'] - 1))
+            r.add_red("^\n")
+        r.separator()
+        if len(a['issues']) == 0:
+            r.add_green("No style issues found!\n")
+        else:
+            r.add_red("These issues can be fixed automatically by running:\n")
+            r.add("$ contrib/devtools/basic_style.py fix [target "
+                  "[target ...]]\n")
+        r.separator()
         r.flush()
 
+    def _json_print(self):
+        a = self.results
+        super()._json_print()
+
     def _shell_exit(self):
-        return (0 if len(self.results) == 0 else
+        return (0 if len(self.results['issues']) == 0 else
                 "*** code formatting issue found")
 
 def add_check_cmd(subparsers):
@@ -363,5 +362,7 @@ if __name__ == "__main__":
     add_check_cmd(subparsers)
     add_fix_cmd(subparsers)
     options = parser.parse_args()
+    if not hasattr(options, "func"):
+        parser.print_help()
+        sys.exit("*** missing argument")
     options.func(options)
-
