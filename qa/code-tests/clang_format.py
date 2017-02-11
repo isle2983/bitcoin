@@ -151,9 +151,9 @@ class ReportCmd(ClangFormatCmd):
                            a['lines_removed'], a['lines_unchanged'],
                            a['lines_after'])
         a['style_score'] = float(score)
-        a['slowest_diffs'] = [{'file_path': f['file_path'],
-                               'diff_time': f['diff_time']} for f in
-                              file_infos if f['diff_time'] > 1.0]
+        a['slow_diffs'] = [{'file_path': f['file_path'],
+                            'diff_time': f['diff_time']} for f in
+                            file_infos if f['diff_time'] > 1.0]
         a['matching'] = sum(1 for f in file_infos if f['matching'])
         a['not_matching'] = sum(1 for f in file_infos if not f['matching'])
         a['formatted_md5'] = self._cumulative_md5()
@@ -177,9 +177,9 @@ class ReportCmd(ClangFormatCmd):
             r.separator()
         r.add("Parallel jobs for diffs:   %d\n" % a['jobs'])
         r.add("Elapsed time:              %.02fs\n" % a['elapsed_time'])
-        if len(a['slowest_diffs']) > 0:
+        if len(a['slow_diffs']) > 0:
             r.add("Slowest diffs:\n")
-            for slow in a['slowest_diffs']:
+            for slow in a['slow_diffs']:
                 r.add("%6.02fs for %s\n" % (slow['diff_time'],
                                             slow['file_path']))
         r.separator()

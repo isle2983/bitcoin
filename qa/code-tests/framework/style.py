@@ -21,7 +21,7 @@ class StyleScore(object):
         self.lines_after = lines_after
         self.score = (100.0 if (lines_added + lines_removed) == 0 else
                       min(abs(1.0 - (float(lines_before - lines_unchanged) /
-                                     float(lines_before))) * 100, 99.0))
+                                     float(lines_before))) * 100, 99.999))
 
     def __str__(self):
         return (" +--------+         +------------+--------+---------+--------"

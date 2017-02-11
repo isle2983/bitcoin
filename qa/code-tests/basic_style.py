@@ -15,7 +15,7 @@ from framework.file_content_cmd import FileContentCmd
 from framework.args import add_jobs_arg
 from framework.args import add_json_arg
 from framework.git import add_git_tracked_targets_arg
-from framework.style import StyleDiff
+from framework.style import StyleDiff, StyleScore
 
 
 REPO_INFO = {
@@ -77,204 +77,6 @@ class BasicStyleRules(object):
 
 
 ###############################################################################
-# gather file info
-###############################################################################
-
-
-def find_failures_for_rule(file_info, rule):
-    matches = [match for match in
-               rule['regex_compiled'].finditer(file_info['contents']) if
-               match is not None]
-    lines = [find_line_of_match(file_info['contents'], match) for match in
-             matches]
-    if len(lines) > 0:
-        yield {'filename': file_info['filename'],
-               'contents': file_info['contents'],
-               'title':    rule['title'],
-               'lines':    lines,
-               'rule':     rule}
-
-
-def find_failures(file_info):
-    return list(itertools.chain(*[find_failures_for_rule(file_info, rule)
-                                  for rule in file_info['rules']]))
-
-
-def gather_file_info(filename):
-    file_info = {}
-    file_info['filename'] = filename
-    file_info['contents'] = read_file(filename)
-    file_info['rules'] = [r for r in STYLE_RULES if
-                          r['applies_compiled'].match(filename)]
-    file_info['rules_not_covering'] = [r for r in STYLE_RULES if not
-                                       r['applies_compiled'].match(filename)]
-    file_info['failures'] = find_failures(file_info)
-    return file_info
-
-
-###############################################################################
-# report execution
-###############################################################################
-
-
-def report_filenames(file_infos):
-    if len(file_infos) == 0:
-        return
-    R.add('\t')
-    R.add('\n\t'.join([file_info['filename'] for file_info in file_infos]))
-    R.add('\n')
-
-
-def report_summary(file_infos, full_file_list):
-    R.add("%4d files tracked according to '%s'\n" %
-          (len(full_file_list), GIT_LS_CMD))
-    R.add("%4d files examined according to STYLE_RULES and ALWAYS_IGNORE "
-          "settings\n" % len(file_infos))
-
-
-def file_fails_rule(file_info, rule):
-    return len([failure for failure in file_info['failures'] if
-                failure['rule'] is rule]) > 0
-
-
-def report_rule(rule, file_infos):
-    covered = [file_info for file_info in file_infos if
-               rule in file_info['rules']]
-    not_covered = [file_info for file_info in file_infos if
-                   rule in file_info['rules_not_covering']]
-
-    passed = [file_info for file_info in file_infos if not
-              file_fails_rule(file_info, rule)]
-    failed = [file_info for file_info in file_infos if
-              file_fails_rule(file_info, rule)]
-
-    R.add('Rule title: "%s"\n' % rule['title'])
-    R.add('File extensions covered by rule:    %s\n' % rule['applies'])
-    R.add("Files covered by rule:             %4d\n" % len(covered))
-    R.add("Files not covered by rule:         %4d\n" % len(not_covered))
-    R.add("Files passed:                      %4d\n" % len(passed))
-    R.add("Files failed:                      %4d\n" % len(failed))
-    report_filenames(failed)
-
-
-def print_report(file_infos, full_file_list):
-    R.separator()
-    report_summary(file_infos, full_file_list)
-    for rule in STYLE_RULES:
-        R.separator()
-        report_rule(rule, file_infos)
-    R.separator()
-    R.flush()
-
-
-def exec_report(base_directory):
-    original_cwd = os.getcwd()
-    os.chdir(base_directory)
-    full_file_list = git_ls()
-    file_infos = [gather_file_info(filename) for filename in
-                  get_filenames_to_examine(full_file_list)]
-    print_report(file_infos, full_file_list)
-    os.chdir(original_cwd)
-
-
-###############################################################################
-# check execution
-###############################################################################
-
-
-def get_all_failures(file_infos):
-    return list(itertools.chain(*[file_info['failures'] for file_info in
-                file_infos]))
-
-
-def report_failure(failure):
-    R.add("An issue was found with ")
-    R.add_red("%s\n" % failure['filename'])
-    R.add('Rule: "%s"\n\n' % failure['title'])
-    for line in failure['lines']:
-        R.add('line %d:\n' % line['number'])
-        R.add("%s" % line['contents'])
-        R.add(' ' * (line['character'] - 1))
-        R.add_red("^\n")
-
-
-def print_check_report(file_infos, full_file_list, failures):
-    R.separator()
-    report_summary(file_infos, full_file_list)
-
-    for failure in failures:
-        R.separator()
-        report_failure(failure)
-
-    R.separator()
-    if len(failures) == 0:
-        R.add_green()("No style issues found!\n")
-    else:
-        R.add_red("These issues can be fixed automatically by running:\n")
-        R.add("$ contrib/devtools/basic_style.py fix <base_directory>\n")
-    R.separator()
-    R.flush()
-
-
-def exec_check(base_directory):
-    original_cwd = os.getcwd()
-    os.chdir(base_directory)
-    full_file_list = git_ls()
-    file_infos = [gather_file_info(filename) for filename in
-                  get_filenames_to_examine(full_file_list)]
-    failures = get_all_failures(file_infos)
-    print_check_report(file_infos, full_file_list, failures)
-    os.chdir(original_cwd)
-    if len(failures) > 0:
-        sys.exit("*** Style issues found!")
-
-
-###############################################################################
-# fix execution
-###############################################################################
-
-
-def fix_contents(contents, regex, fix):
-    # Multiple instances of a particular issue could be present. For example,
-    # multiple spaces at the end of a line. So, we repeat the
-    # search-and-replace until search matches are exhausted.
-    while True:
-        contents, subs = regex.subn(fix, contents)
-        if subs == 0:
-            break
-    return contents
-
-
-def fix_failures(failures):
-    for failure in failures:
-        contents = fix_contents(failure['contents'],
-                                failure['rule']['regex_compiled'],
-                                failure['rule']['fix'])
-        write_file(failure['filename'], contents)
-
-
-def fix_loop():
-    full_file_list = git_ls()
-    # Multiple types of issues could be overlapping. For example, a tabstop at
-    # the end of a line so the fix then creates whitespace at the end. We
-    # repeat fix-up cycles until everything is cleared.
-    while True:
-        file_infos = [gather_file_info(filename) for filename in
-                      get_filenames_to_examine(full_file_list)]
-        failures = get_all_failures(file_infos)
-        if len(failures) == 0:
-            break
-        fix_failures(failures)
-
-
-def exec_fix(base_directory):
-    original_cwd = os.getcwd()
-    os.chdir(base_directory)
-    fix_loop()
-    os.chdir(original_cwd)
-
-
-###############################################################################
 # file info
 ###############################################################################
 
@@ -298,28 +100,49 @@ class BasicStyleFileInfo(FileInfo):
                 'number':    contents_before_match.count('\n') + 1,
                 'character': match.start() - line_start_char + 1}
 
-    def _find_failures(self):
+    def _find_issues(self, content):
         for rule in self['rules_that_apply']:
             matches = [match for match in
-                       rule['regex_compiled'].finditer(self['content']) if
+                       rule['regex_compiled'].finditer(content) if
                        match is not None]
             lines = [self._find_line_of_match(match) for match in matches]
             for line in lines:
                 yield {'file_path':  self['file_path'],
                        'content':    self['content'],
                        'rule_title': rule['title'],
-                       'line':       line}
+                       'line':       line,
+                       'fix':        {'regex':      rule['regex_compiled'],
+                                      'fix_string': rule['fix']}}
+
+    def _apply_fix(self, content, fix):
+        # Multiple instances of a particular issue could be present. For
+        # example, multiple spaces at the end of a line. So, we repeat the
+        # search-and-replace until search matches are exhausted.
+        fixed_content = content
+        while True:
+            fixed_content, subs = fix['regex'].subn(fix['fix_string'],
+                                                    fixed_content)
+            if subs == 0:
+                break
+        return fixed_content
+
+    def _fix_content(self):
+        fixed_content = self['content']
+        issues = self['issues']
+        # Multiple types of issues could be overlapping. For example, a tabstop
+        # at the end of a line so the fix then creates whitespace at the end.
+        # We repeat fix-up cycles until everything is cleared.
+        while len(issues) > 0:
+            fixed_content = self._apply_fix(fixed_content, issues[0]['fix'])
+            issues = list(self._find_issues(fixed_content))
+        return fixed_content
 
     def compute(self):
-        # TODO:
-        self['fixed_content'] = self['content']
+        self['issues'] = list(self._find_issues(self['content']))
+        self['fixed_content'] = self._fix_content()
         self.set_write_content(self['fixed_content'])
-
-        # diff info:
         self.update(StyleDiff(self['content'], self['fixed_content']))
-
-        # failures info:
-        self['failures'] = list(self._find_failures())
+        self['matching'] = self['content'] == self['fixed_content']
 
 
 ###############################################################################
@@ -349,13 +172,65 @@ class ReportCmd(BasicStyleCmd):
     """
     def _analysis(self):
         a = super()._analysis()
+        file_infos = self.file_infos
+        a['jobs'] = self.jobs
+        a['elapsed_time'] = self.elapsed_time
+        a['lines_before'] = sum(f['lines_before'] for f in file_infos)
+        a['lines_added'] = sum(f['lines_added'] for f in file_infos)
+        a['lines_removed'] = sum(f['lines_removed'] for f in file_infos)
+        a['lines_unchanged'] = sum(f['lines_unchanged'] for f in file_infos)
+        a['lines_after'] = sum(f['lines_after'] for f in file_infos)
+        score = StyleScore(a['lines_before'], a['lines_added'],
+                           a['lines_removed'], a['lines_unchanged'],
+                           a['lines_after'])
+        a['style_score'] = float(score)
+        a['matching'] = sum(1 for f in file_infos if f['matching'])
+        a['not_matching'] = sum(1 for f in file_infos if not f['matching'])
+
+        all_issues = list(itertools.chain.from_iterable(
+            file_info['issues'] for file_info in file_infos))
+
+        a['rule_evaluation'] = {}
+        for rule in self.rules:
+            examined = sum(1 for f in file_infos if
+                           rule['filter'].evaluate(f['file_path']))
+            occurence_count = len([f for f in all_issues if
+                                   f['rule_title'] == rule['title']])
+            file_count = len(set([f['file_path'] for f in all_issues if
+                                  f['rule_title'] == rule['title']]))
+            a['rule_evaluation'][rule['title']] = (
+                {'extensions': rule['applies'], 'examined': examined,
+                 'files': file_count, 'occurences': occurence_count})
         return a
 
     def _human_print(self):
         super()._human_print()
-
-    def _json_print(self):
-        super()._json_print()
+        r = self.report
+        a = self.results
+        r.add("Parallel jobs for diffs:   %d\n" % a['jobs'])
+        r.add("Elapsed time:              %.02fs\n" % a['elapsed_time'])
+        r.separator()
+        for title, evaluation in sorted(a['rule_evaluation'].items()):
+            r.add('"%s":\n' % title)
+            r.add('    Applies to:                    %s\n' %
+                  evaluation['extensions'])
+            r.add('    Files examined:           %8d\n' %
+                  evaluation['examined'])
+            r.add('    Occurences of issue:      %8d\n' %
+                  evaluation['occurences'])
+            r.add('    Files with issue:         %8d\n\n' %
+                  evaluation['files'])
+        r.separator()
+        r.add("Files scoring 100%%:        %8d\n" % a['matching'])
+        r.add("Files scoring <100%%:       %8d\n" % a['not_matching'])
+        r.separator()
+        r.add("Overall scoring:\n\n")
+        score = StyleScore(a['lines_before'], a['lines_added'],
+                           a['lines_removed'], a['lines_unchanged'],
+                           a['lines_after']);
+        r.add(str(score))
+        r.separator()
+        r.flush()
 
 
 def add_report_cmd(subparsers):
@@ -384,13 +259,38 @@ class CheckCmd(BasicStyleCmd):
 
     def _analysis(self):
         a = super()._analysis()
+        file_infos = self.file_infos
+        a['failures'] = itertools.chain.from_iterable(file_info['issues'] for
+                                                      file_info in file_infos))
+
+        a['rule_evaluation'] = {}
+        for rule in self.rules:
+            examined = sum(1 for f in file_infos if
+                           rule['filter'].evaluate(f['file_path']))
+            occurence_count = len([f for f in all_issues if
+                                   f['rule_title'] == rule['title']])
+            file_count = len(set([f['file_path'] for f in all_issues if
+                                  f['rule_title'] == rule['title']]))
+            a['rule_evaluation'][rule['title']] = (
+                {'extensions': rule['applies'], 'examined': examined,
+                 'files': file_count, 'occurences': occurence_count})
         return a
 
     def _human_print(self):
         super()._human_print()
-
-    def _json_print(self):
-        super()._json_print()
+        r = self.report
+        a = self.resultsd
+        for failure in a['failures']:
+            r.separator()
+            R.add("An issue was found with ")
+            R.add_red("%s\n" % failure['filename'])
+            R.add('Rule: "%s"\n\n' % failure['title'])
+            for line in failure['lines']:
+                R.add('line %d:\n' % line['number'])
+                R.add("%s" % line['contents'])
+                R.add(' ' * (line['character'] - 1))
+                R.add_red("^\n")
+        r.flush()
 
     def _shell_exit(self):
         return (0 if len(self.results) == 0 else
