@@ -17,14 +17,6 @@ from framework.args import add_json_arg
 from framework.git import add_git_tracked_targets_arg
 from framework.style import StyleDiff, StyleScore
 
-
-REPO_INFO = {
-    'subtrees': ['src/secp256k1/*',
-                 'src/leveldb/*',
-                 'src/univalue/*',
-                 'src/crypto/ctaes/*'],
-}
-
 ###############################################################################
 # style rules
 ###############################################################################
@@ -52,9 +44,11 @@ STYLE_RULES = [
      'fix':     ';\n'},
 ]
 
-SOURCE_FILES = list(set(itertools.chain(*[r['applies'] for r in STYLE_RULES])))
 
 class BasicStyleRules(object):
+    """
+    Wrapping of the above rules to provide helpers.
+    """
     def __init__(self, repository):
         self.repository = repository
         self.rules = STYLE_RULES
@@ -73,7 +67,21 @@ class BasicStyleRules(object):
 
     def rule_with_title(self, title):
         return next((rule for rule in self.rules if rule['title'] == title),
-                     None)
+                    None)
+
+
+###############################################################################
+# define which files the rules apply to
+###############################################################################
+
+REPO_INFO = {
+    'subtrees': ['src/secp256k1/*',
+                 'src/leveldb/*',
+                 'src/univalue/*',
+                 'src/crypto/ctaes/*'],
+}
+
+SOURCE_FILES = list(set(itertools.chain(*[r['applies'] for r in STYLE_RULES])))
 
 
 ###############################################################################
@@ -89,7 +97,6 @@ class BasicStyleFileInfo(FileInfo):
         super().__init__(repository, file_path)
         self.rules = rules
         self['rules_that_apply'] = list(self.rules.rules_that_apply(file_path))
-
 
     def _find_line_of_match(self, match):
         contents_before_match = self['content'][:match.start()]
@@ -162,6 +169,7 @@ class BasicStyleCmd(FileContentCmd):
         return [BasicStyleFileInfo(self.repository, f, self.rules) for f in
                 self.files_targeted]
 
+
 ###############################################################################
 # report cmd
 ###############################################################################
@@ -194,13 +202,13 @@ class ReportCmd(BasicStyleCmd):
         for rule in self.rules:
             examined = sum(1 for f in file_infos if
                            rule['filter'].evaluate(f['file_path']))
-            occurence_count = len([f for f in all_issues if
-                                   f['rule_title'] == rule['title']])
+            occurrence_count = len([f for f in all_issues if
+                                    f['rule_title'] == rule['title']])
             file_count = len(set([f['file_path'] for f in all_issues if
                                   f['rule_title'] == rule['title']]))
             a['rule_evaluation'][rule['title']] = (
                 {'extensions': rule['applies'], 'examined': examined,
-                 'files': file_count, 'occurences': occurence_count})
+                 'files': file_count, 'occurrences': occurrence_count})
         return a
 
     def _human_print(self):
@@ -212,12 +220,12 @@ class ReportCmd(BasicStyleCmd):
         r.separator()
         for title, evaluation in sorted(a['rule_evaluation'].items()):
             r.add('"%s":\n' % title)
-            r.add('    Applies to:                    %s\n' %
+            r.add('    Applies to:               %s\n' %
                   evaluation['extensions'])
             r.add('    Files examined:           %8d\n' %
                   evaluation['examined'])
-            r.add('    Occurences of issue:      %8d\n' %
-                  evaluation['occurences'])
+            r.add('    Occurrences of issue:     %8d\n' %
+                  evaluation['occurrences'])
             r.add('    Files with issue:         %8d\n\n' %
                   evaluation['files'])
         r.separator()
@@ -227,7 +235,7 @@ class ReportCmd(BasicStyleCmd):
         r.add("Overall scoring:\n\n")
         score = StyleScore(a['lines_before'], a['lines_added'],
                            a['lines_removed'], a['lines_unchanged'],
-                           a['lines_after']);
+                           a['lines_after'])
         r.add(str(score))
         r.separator()
         r.flush()
@@ -238,15 +246,16 @@ def add_report_cmd(subparsers):
         ReportCmd(options.repository, options.jobs,
                   options.target_fnmatches, options.json).exec()
 
-    report_help = ("Valiates that the selected targets do not have basic style "
-                  "issues, give a per-file report and returns a non-zero "
-                  "shell status if there are any basic style issues "
-                  "discovered.")
+    report_help = ("Validates that the selected targets do not have basic "
+                   "style issues, give a per-file report and returns a "
+                   "non-zero shell status if there are any basic style issues "
+                   "discovered.")
     parser = subparsers.add_parser('report', help=report_help)
     parser.set_defaults(func=exec_report_cmd)
     add_jobs_arg(parser)
     add_json_arg(parser)
     add_git_tracked_targets_arg(parser)
+
 
 ###############################################################################
 # check cmd
@@ -275,7 +284,7 @@ class CheckCmd(BasicStyleCmd):
             r.add('Rule: "%s"\n\n' % issue['rule_title'])
             r.add('line %d:\n' % issue['line']['number'])
             r.add("%s" % issue['line']['context'])
-            r.add(' ' *  (issue['line']['character'] - 1))
+            r.add(' ' * (issue['line']['character'] - 1))
             r.add_red("^\n")
         r.separator()
         if len(a['issues']) == 0:
@@ -295,12 +304,13 @@ class CheckCmd(BasicStyleCmd):
         return (0 if len(self.results['issues']) == 0 else
                 "*** code formatting issue found")
 
+
 def add_check_cmd(subparsers):
     def exec_check_cmd(options):
         CheckCmd(options.repository, options.jobs,
                  options.target_fnmatches, options.json).exec()
 
-    check_help = ("Valiates that the selected targets do not have basic style "
+    check_help = ("Validates that the selected targets do not have basic style "
                   "issues, give a per-file report and returns a non-zero "
                   "shell status if there are any basic style issues "
                   "discovered.")
@@ -309,6 +319,7 @@ def add_check_cmd(subparsers):
     add_jobs_arg(parser)
     add_json_arg(parser)
     add_git_tracked_targets_arg(parser)
+
 
 ###############################################################################
 # fix cmd

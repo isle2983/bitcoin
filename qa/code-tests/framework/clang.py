@@ -207,7 +207,7 @@ class ClangFormat(object):
         self.binary_path = binary['path']
         self.binary_version = binary['version']
         self.style_path = style_path
-        self.style = ClangFormatStyle(style_path)
+        self.style = ClangFormatStyle(self.style_path)
         self.UNKNOWN_KEY_REGEX = re.compile("unknown key '(?P<key_name>\w+)'")
 
     def _parse_unknown_key(self, err):

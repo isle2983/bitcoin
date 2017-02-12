@@ -344,6 +344,9 @@ if __name__ == "__main__":
     add_check_cmd(subparsers)
     add_format_cmd(subparsers)
     options = parser.parse_args()
+    if not hasattr(options, "func"):
+        parser.print_help()
+        sys.exit("*** missing argument")
     options.clang_format = (
         clang_format_from_options(options, REPO_INFO['clang_format_style']))
     options.func(options)
