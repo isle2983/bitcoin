@@ -90,8 +90,7 @@ SOURCE_FILES = list(set(itertools.chain(*[r['applies'] for r in STYLE_RULES])))
 
 class BasicStyleFileInfo(FileInfo):
     """
-    Obtains and represents the information regarding a single file obtained
-    from clang-format.
+    Obtains and represents the information regarding a single file.
     """
     def __init__(self, repository, file_path, rules):
         super().__init__(repository, file_path)
@@ -297,7 +296,6 @@ class CheckCmd(BasicStyleCmd):
         r.flush()
 
     def _json_print(self):
-        a = self.results
         super()._json_print()
 
     def _shell_exit(self):
