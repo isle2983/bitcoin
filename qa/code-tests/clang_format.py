@@ -203,7 +203,7 @@ class ReportCmd(ClangFormatCmd):
 def add_report_cmd(subparsers):
     def exec_report_cmd(options):
         ReportCmd(options.repository, options.jobs, options.target_fnmatches,
-                  options.json, options.clang_format).exec()
+                  options.json, options.clang_format).exec_analysis()
 
     report_help = ("Produces a report with the analysis of the code format "
                    "adherence of the selected targets taken as a group.")
@@ -266,15 +266,11 @@ class CheckCmd(ClangFormatCmd):
                 "*** code formatting issue found")
 
 
-def exec_check_cmd(options):
-    CheckCmd(options.repository, options.jobs, options.target_fnmatches,
-             options.json, options.clang_format, options.force).exec()
-
-
 def add_check_cmd(subparsers):
     def exec_check_cmd(options):
         CheckCmd(options.repository, options.jobs, options.target_fnmatches,
-                 options.json, options.clang_format, options.force).exec()
+                 options.json, options.clang_format,
+                 options.force).exec_analyis()
 
     check_help = ("Validates that the selected targets match the style, gives "
                   "a per-file report and returns a non-zero shell status if "
@@ -303,15 +299,6 @@ class FormatCmd(ClangFormatCmd):
     def _compute_file_infos(self):
         pass
 
-    def _analysis(self):
-        return None
-
-    def _human_print(self):
-        pass
-
-    def _json_print(self):
-        pass
-
     def _write_files(self):
         self.file_infos.write_all()
 
@@ -319,7 +306,7 @@ class FormatCmd(ClangFormatCmd):
 def add_format_cmd(subparsers):
     def exec_format_cmd(options):
         FormatCmd(options.repository, options.target_fnmatches,
-                  options.clang_format, options.force).exec()
+                  options.clang_format, options.force).exec_write()
 
     format_help = ("Applies the style formatting to the target files.")
     parser = subparsers.add_parser('format', help=format_help)

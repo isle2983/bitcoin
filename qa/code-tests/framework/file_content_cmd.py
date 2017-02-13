@@ -105,9 +105,13 @@ class FileContentCmd(object):
     def _shell_exit(self):
         return 0
 
-    def exec(self):
+    def exec_analysis(self):
         self._read_and_compute_file_infos()
-        self._write_files()
         self.results = self._analysis()
         self._json_print() if self.json else self._human_print()
+        sys.exit(self._shell_exit())
+
+    def exec_write(self):
+        self._read_and_compute_file_infos()
+        self._write_files()
         sys.exit(self._shell_exit())

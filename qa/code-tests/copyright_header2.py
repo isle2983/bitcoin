@@ -376,16 +376,24 @@ class CheckCmd(CopyrightHeaderCmd):
 
     def _human_print(self):
         super()._human_print()
+        r = self.report
+        a = self.results
         for issue in a['issues']:
             r.add("An issue was found with ")
             r.add_red("%s" % issue['file_path'])
             r.add('\n\n%s\n\n' % issue['evaluation']['description'])
             r.add('Info for resolution:\n')
             r.add(issue['evaluation']['resolution'])
+            r.separator()
         if len(a['issues']) == 0:
             r.add_green("No copyright header issues found!\n")
-        r.separator()
         r.flush()
+
+    def _json_print(self):
+        a = self.results
+        for issue in a['issues']:
+            issue['evaluation'].pop('resolution', None)
+        super()._json_print()
 
     def _shell_exit(self):
         return (0 if len(self.results['issues']) == 0 else
@@ -406,6 +414,34 @@ def add_check_cmd(subparsers):
 
 
 ###############################################################################
+# update cmd
+###############################################################################
+
+class UpdateCmd(CopyrightHeaderCmd):
+    """
+    'update' subcommand class.
+    """
+
+    def _compute_file_infos(self):
+        super()._compute_file_infos()
+        for file_info in self.file_infos:
+           file_info.set_write_content(file_info['content'])
+
+    def _write_files(self):
+        self.file_infos.write_all()
+
+
+def add_update_cmd(subparsers):
+    def exec_update_cmd(options):
+        UpdateCmd(options.repository, 1, options.target_fnmatches,
+                  False).exec_write()
+
+    update_help = ("")
+    parser = subparsers.add_parser('update', help=update_help)
+    parser.set_defaults(func=exec_update_cmd)
+    add_git_tracked_targets_arg(parser)
+
+###############################################################################
 # UI
 ###############################################################################
 
@@ -417,6 +453,7 @@ if __name__ == "__main__":
     subparsers = parser.add_subparsers()
     add_report_cmd(subparsers)
     add_check_cmd(subparsers)
+    add_update_cmd(subparsers)
     options = parser.parse_args()
     if not hasattr(options, "func"):
         parser.print_help()

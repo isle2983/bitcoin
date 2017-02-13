@@ -242,7 +242,7 @@ class ReportCmd(BasicStyleCmd):
 def add_report_cmd(subparsers):
     def exec_report_cmd(options):
         ReportCmd(options.repository, options.jobs,
-                  options.target_fnmatches, options.json).exec()
+                  options.target_fnmatches, options.json).exec_analysis()
 
     report_help = ("Validates that the selected targets do not have basic "
                    "style issues, give a per-file report and returns a "
@@ -305,7 +305,7 @@ class CheckCmd(BasicStyleCmd):
 def add_check_cmd(subparsers):
     def exec_check_cmd(options):
         CheckCmd(options.repository, options.jobs,
-                 options.target_fnmatches, options.json).exec()
+                 options.target_fnmatches, options.json).exec_analysis()
 
     check_help = ("Validates that the selected targets do not have basic style "
                   "issues, give a per-file report and returns a non-zero "
@@ -329,15 +329,6 @@ class FixCmd(BasicStyleCmd):
     def __init__(self, repository, jobs, target_fnmatches):
         super().__init__(repository, jobs, target_fnmatches, False)
 
-    def _analysis(self):
-        return None
-
-    def _human_print(self):
-        pass
-
-    def _json_print(self):
-        pass
-
     def _write_files(self):
         self.file_infos.write_all()
 
@@ -345,7 +336,7 @@ class FixCmd(BasicStyleCmd):
 def add_fix_cmd(subparsers):
     def exec_fix_cmd(options):
         FixCmd(options.repository, options.jobs,
-               options.target_fnmatches).exec()
+               options.target_fnmatches).exec_write()
 
     fix_help = ("Applies basic style fixes to the target files.")
     parser = subparsers.add_parser('fix', help=fix_help)
