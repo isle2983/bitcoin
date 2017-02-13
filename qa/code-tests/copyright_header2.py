@@ -253,13 +253,13 @@ class CopyrightHeaderFileInfo(FileInfo):
             return ISSUE_3
         if not self['has_other'] and self['other_copyright_expected']:
             return ISSUE_4
-        return NO_FAILURE
+        return NO_ISSUE
 
     def compute(self):
         self['has_header'] = self._has_header()
         self['has_other'] = self._has_other_copyright()
         self['evaluation'] = self._evaluate()
-        self['pass'] = self['evaluation'] is NO_FAILURE
+        self['pass'] = self['evaluation'] is NO_ISSUE
 
 
 ###############################################################################
@@ -316,7 +316,7 @@ class ReportCmd(CopyrightHeaderCmd):
         a['failed'] = sum(1 for f in self.file_infos if not f['pass'])
         a['issues'] = {}
         for issue in ISSUES:
-            a['reasons'][issue['description']] = sum(
+            a['issues'][issue['description']] = sum(
                 1 for f in self.file_infos if
                 f['evaluation']['description'] == issue['description'])
         return a
@@ -338,7 +338,7 @@ class ReportCmd(CopyrightHeaderCmd):
         r.add("%-70s %6d\n" % ("Files passed:", a['passed']))
         r.add("%-70s %6d\n" % ("Files failed:", a['failed']))
         r.separator()
-        for key, value in sorted(a['issue'].items()):
+        for key, value in sorted(a['issues'].items()):
             r.add("%-70s %6d\n" % ('"' + key + '":', value))
         r.separator()
         r.flush()
