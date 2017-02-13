@@ -371,7 +371,7 @@ class CheckCmd(CopyrightHeaderCmd):
         a = super()._analysis()
         a['issues'] = [{'file_path':  f['file_path'],
                         'evaluation': f['evaluation']} for f in
-                         self.file_infos if not f['pass']]
+                       self.file_infos if not f['pass']]
         return a
 
     def _human_print(self):
@@ -421,6 +421,8 @@ class UpdateCmd(CopyrightHeaderCmd):
     """
     'update' subcommand class.
     """
+    def __init__(self, repository, target_fnmatches):
+        super().__init__(repository, 1, target_fnmatches, False)
 
     def _compute_file_infos(self):
         super()._compute_file_infos()
@@ -433,8 +435,7 @@ class UpdateCmd(CopyrightHeaderCmd):
 
 def add_update_cmd(subparsers):
     def exec_update_cmd(options):
-        UpdateCmd(options.repository, 1, options.target_fnmatches,
-                  False).exec_write()
+        UpdateCmd(options.repository, options.target_fnmatches).exec_write()
 
     update_help = ("")
     parser = subparsers.add_parser('update', help=update_help)
