@@ -26,75 +26,69 @@ SOURCE_FILES = ['*.h', '*.cpp', '*.cc', '*.c', '*.py', '*.sh', '*.am', '*.m4',
                 '*.include']
 
 REPO_INFO = {
-     'subtrees':           ['src/secp256k1/*',
-                            'src/leveldb/*',
-                            'src/univalue/*',
-                            'src/crypto/ctaes/*'],
-    'no_copyright_header': [ '*__init__.py' ]
+    'subtrees': [
+        'src/secp256k1/*',
+        'src/leveldb/*',
+        'src/univalue/*',
+        'src/crypto/ctaes/*',
+    ],
+    'no_copyright_header': [
+        '*__init__.py',
+        'doc/man/Makefile.am',
+        'build-aux/m4/ax_boost_base.m4',
+        'build-aux/m4/ax_boost_chrono.m4',
+        'build-aux/m4/ax_boost_filesystem.m4',
+        'build-aux/m4/ax_boost_program_options.m4',
+        'build-aux/m4/ax_boost_system.m4',
+        'build-aux/m4/ax_boost_thread.m4',
+        'build-aux/m4/ax_boost_unit_test_framework.m4',
+        'build-aux/m4/ax_check_compile_flag.m4',
+        'build-aux/m4/ax_check_link_flag.m4',
+        'build-aux/m4/ax_check_preproc_flag.m4',
+        'build-aux/m4/ax_cxx_compile_stdcxx.m4',
+        'build-aux/m4/ax_gcc_func_attribute.m4',
+        'build-aux/m4/ax_pthread.m4',
+        'build-aux/m4/l_atomic.m4',
+        'src/qt/bitcoinstrings.cpp',
+        'src/chainparamsseeds.h',
+        'src/tinyformat.h',
+        'qa/rpc-tests/test_framework/bignum.py',
+        'contrib/devtools/clang-format-diff.py',
+        'qa/rpc-tests/test_framework/authproxy.py',
+        'qa/rpc-tests/test_framework/key.py',
+    ],
+    'other_copyright_occurrences': [
+        'qa/code-tests/copyright_header.py',
+        'contrib/devtools/gen-manpages.sh',
+        'share/qt/extract_strings_qt.py',
+        'src/Makefile.qt.include',
+        'src/clientversion.h',
+        'src/init.cpp',
+        'src/qt/bitcoinstrings.cpp',
+        'src/qt/splashscreen.cpp',
+        'src/util.cpp',
+        'src/util.h',
+        'src/tinyformat.h',
+        'contrib/devtools/clang-format-diff.py',
+        'qa/rpc-tests/test_framework/authproxy.py',
+        'qa/rpc-tests/test_framework/key.py',
+        'contrib/devtools/git-subtree-check.sh',
+        'build-aux/m4/l_atomic.m4',
+        'build-aux/m4/ax_boost_base.m4',
+        'build-aux/m4/ax_boost_chrono.m4',
+        'build-aux/m4/ax_boost_filesystem.m4',
+        'build-aux/m4/ax_boost_program_options.m4',
+        'build-aux/m4/ax_boost_system.m4',
+        'build-aux/m4/ax_boost_thread.m4',
+        'build-aux/m4/ax_boost_unit_test_framework.m4',
+        'build-aux/m4/ax_check_compile_flag.m4',
+        'build-aux/m4/ax_check_link_flag.m4',
+        'build-aux/m4/ax_check_preproc_flag.m4',
+        'build-aux/m4/ax_cxx_compile_stdcxx.m4',
+        'build-aux/m4/ax_gcc_func_attribute.m4',
+        'build-aux/m4/ax_pthread.m4',
+    ],
 }
-
-NO_HEADER_EXPECTED = [
-    # build scripts
-    'doc/man/Makefile.am',
-    'build-aux/m4/ax_boost_base.m4',
-    'build-aux/m4/ax_boost_chrono.m4',
-    'build-aux/m4/ax_boost_filesystem.m4',
-    'build-aux/m4/ax_boost_program_options.m4',
-    'build-aux/m4/ax_boost_system.m4',
-    'build-aux/m4/ax_boost_thread.m4',
-    'build-aux/m4/ax_boost_unit_test_framework.m4',
-    'build-aux/m4/ax_check_compile_flag.m4',
-    'build-aux/m4/ax_check_link_flag.m4',
-    'build-aux/m4/ax_check_preproc_flag.m4',
-    'build-aux/m4/ax_cxx_compile_stdcxx.m4',
-    'build-aux/m4/ax_gcc_func_attribute.m4',
-    'build-aux/m4/ax_pthread.m4',
-    'build-aux/m4/l_atomic.m4',
-    # auto generated files:
-    'src/qt/bitcoinstrings.cpp',
-    'src/chainparamsseeds.h',
-    # other copyright notices:
-    'src/tinyformat.h',
-    'qa/rpc-tests/test_framework/bignum.py',
-    'contrib/devtools/clang-format-diff.py',
-    'qa/rpc-tests/test_framework/authproxy.py',
-    'qa/rpc-tests/test_framework/key.py',
-]
-
-OTHER_COPYRIGHT_EXPECTED = [
-    # Uses of the word 'copyright' that are unrelated to the header:
-    'qa/code-tests/copyright_header.py',
-    'contrib/devtools/gen-manpages.sh',
-    'share/qt/extract_strings_qt.py',
-    'src/Makefile.qt.include',
-    'src/clientversion.h',
-    'src/init.cpp',
-    'src/qt/bitcoinstrings.cpp',
-    'src/qt/splashscreen.cpp',
-    'src/util.cpp',
-    'src/util.h',
-    # other, non-core copyright notices:
-    'src/tinyformat.h',
-    'contrib/devtools/clang-format-diff.py',
-    'qa/rpc-tests/test_framework/authproxy.py',
-    'qa/rpc-tests/test_framework/key.py',
-    'contrib/devtools/git-subtree-check.sh',
-    'build-aux/m4/l_atomic.m4',
-    # build scripts:
-    'build-aux/m4/ax_boost_base.m4',
-    'build-aux/m4/ax_boost_chrono.m4',
-    'build-aux/m4/ax_boost_filesystem.m4',
-    'build-aux/m4/ax_boost_program_options.m4',
-    'build-aux/m4/ax_boost_system.m4',
-    'build-aux/m4/ax_boost_thread.m4',
-    'build-aux/m4/ax_boost_unit_test_framework.m4',
-    'build-aux/m4/ax_check_compile_flag.m4',
-    'build-aux/m4/ax_check_link_flag.m4',
-    'build-aux/m4/ax_check_preproc_flag.m4',
-    'build-aux/m4/ax_cxx_compile_stdcxx.m4',
-    'build-aux/m4/ax_gcc_func_attribute.m4',
-    'build-aux/m4/ax_pthread.m4',
-]
 
 ###############################################################################
 # regexes
@@ -140,9 +134,9 @@ OTHER_COPYRIGHT_COMPILED = re.compile(OTHER_COPYRIGHT)
 ###############################################################################
 
 
-FAILURE_REASON_1 = {
+ISSUE_1 = {
     'description': "A valid header was expected, but the file does not match "
-                   "the regex",
+                   "the regex.",
     'resolution': """
 A correct MIT License header copyrighted by 'The Bitcoin Core developers' in
 the present year can be inserted into a file by running:
@@ -156,9 +150,9 @@ check.
 """
 }
 
-FAILURE_REASON_2 = {
+ISSUE_2 = {
     'description': "A valid header was found in the file, but it wasn't "
-                   "expected",
+                   "expected.",
     'resolution': """
 The header was not expected due to a setting in copyright_header.py. If a valid
 copyright header has been added to the file, the filename can be removed from
@@ -166,9 +160,9 @@ the NO_HEADER_EXPECTED listing.
 """
 }
 
-FAILURE_REASON_3 = {
+ISSUE_3 = {
     'description': "Another 'copyright' occurrence was found, but it wasn't "
-                   "expected",
+                   "expected.",
     'resolution': """
 This file's body has a regular expression match for the (case-sensitive) words
 "Copyright", "COPYRIGHT" or 'copyright". If this was an appropriate addition,
@@ -177,7 +171,7 @@ OTHER_COPYRIGHT_EXPECTED listing.
 """
 }
 
-FAILURE_REASON_4 = {
+ISSUE_4 = {
     'description': "Another 'copyright' occurrence was expected, but wasn't "
                    "found.",
     'resolution': """
@@ -189,13 +183,13 @@ from the OTHER_COPYRIGHT_EXPECTED listing.
 """
 }
 
-FAILURE_REASONS = [FAILURE_REASON_1, FAILURE_REASON_2, FAILURE_REASON_3,
-                   FAILURE_REASON_4]
-
-NO_FAILURE = {
+NO_ISSUE = {
     'description': "Everything is excellent",
     'resolution': "(none)"
 }
+
+ISSUES = [ISSUE_1, ISSUE_2, ISSUE_3, ISSUE_4, NO_ISSUE]
+
 
 SCRIPT_HEADER = ("# Copyright (c) %s The Bitcoin Core developers\n"
                  "# Distributed under the MIT software license, see the "
@@ -215,11 +209,57 @@ class CopyrightHeaderFileInfo(FileInfo):
     """
     Obtains and represents the information regarding a single file.
     """
-    def __init__(self, repository, file_path):
+    def __init__(self, repository, file_path, copyright_expected,
+                 other_copyright_expected):
         super().__init__(repository, file_path)
+        self['hdr_expected'] = copyright_expected
+        self['other_copyright_expected'] = other_copyright_expected
+
+    def _starts_with_shebang(self):
+        if len(self['content']) < 2:
+            return False
+        return self['content'][:2] == '#!'
+
+    def _header_match_in_correct_place(self, header_match):
+        start = header_match.start(0)
+        shebang = self._starts_with_shebang()
+        if start == 0:
+            return not shebang
+        return shebang and (self['content'][:start].count('\n') == 1)
+
+    def _has_header(self):
+        header_match = HEADER_COMPILED.search(self['content'])
+        if not header_match:
+            return False
+        return self._header_match_in_correct_place(header_match)
+
+    def _has_copyright_in_region(self, content_region):
+        return OTHER_COPYRIGHT_COMPILED.search(content_region) is not None
+
+    def _has_other_copyright(self):
+        # look for the OTHER_COPYRIGHT regex outside the normal header regex
+        # match
+        header_match = HEADER_COMPILED.search(self['content'])
+        region = (self['content'][header_match.end():] if header_match else
+                  self['content'])
+        return self._has_copyright_in_region(region)
+
+    def _evaluate(self):
+        if not self['has_header'] and self['hdr_expected']:
+            return ISSUE_1
+        if self['has_header'] and not self['hdr_expected']:
+            return ISSUE_2
+        if self['has_other'] and not self['other_copyright_expected']:
+            return ISSUE_3
+        if not self['has_other'] and self['other_copyright_expected']:
+            return ISSUE_4
+        return NO_FAILURE
 
     def compute(self):
-        pass
+        self['has_header'] = self._has_header()
+        self['has_other'] = self._has_other_copyright()
+        self['evaluation'] = self._evaluate()
+        self['pass'] = self['evaluation'] is NO_FAILURE
 
 
 ###############################################################################
@@ -233,10 +273,25 @@ class CopyrightHeaderCmd(FileContentCmd):
     def __init__(self, repository, jobs, target_fnmatches, json):
         super().__init__(repository, jobs, SOURCE_FILES, REPO_INFO['subtrees'],
                          target_fnmatches, json)
+        self.no_copyright_filter = FileFilter()
+        self.no_copyright_filter.append_include(
+            REPO_INFO['no_copyright_header'], base_path=str(repository))
+        self.other_copyright_filter = FileFilter()
+        self.other_copyright_filter.append_include(
+            REPO_INFO['other_copyright_occurrences'],
+            base_path=str(repository))
+
+    def _copyright_expected(self, file_path):
+        return not self.no_copyright_filter.evaluate(file_path)
+
+    def _other_copyright_expected(self, file_path):
+        return self.other_copyright_filter.evaluate(file_path)
 
     def _file_info_list(self):
-        return [CopyrightHeaderFileInfo(self.repository, f) for f in
-                self.files_targeted]
+        return [CopyrightHeaderFileInfo(self.repository, f,
+                                        self._copyright_expected(f),
+                                        self._other_copyright_expected(f))
+                for f in self.files_targeted]
 
 
 ###############################################################################
@@ -249,11 +304,43 @@ class ReportCmd(CopyrightHeaderCmd):
     """
     def _analysis(self):
         a = super()._analysis()
+        a['hdr_expected'] = sum(1 for f in self.file_infos if
+                                f['hdr_expected'])
+        a['no_hdr_expected'] = sum(1 for f in self.file_infos if not
+                                   f['hdr_expected'])
+        a['other_copyright_expected'] = sum(1 for f in self.file_infos if
+                                            f['other_copyright_expected'])
+        a['no_other_copyright_expected'] = sum(1 for f in self.file_infos if not
+                                               f['other_copyright_expected'])
+        a['passed'] = sum(1 for f in self.file_infos if f['pass'])
+        a['failed'] = sum(1 for f in self.file_infos if not f['pass'])
+        a['issues'] = {}
+        for issue in ISSUES:
+            a['reasons'][issue['description']] = sum(
+                1 for f in self.file_infos if
+                f['evaluation']['description'] == issue['description'])
         return a
 
     def _human_print(self):
         super()._human_print()
         r = self.report
+        a = self.results
+        r.add("%-70s %6d\n" % ("Files expected to have header:",
+                               a['hdr_expected']))
+        r.add("%-70s %6d\n" % ("Files not expected to have header:",
+                               a['no_hdr_expected']))
+        r.add("%-70s %6d\n" %
+              ("Files expected to have 'copyright' occurrence outside header:",
+               a['other_copyright_expected']))
+        r.add("%-70s %6d\n" %
+              ("Files not expected to have 'copyright' occurrence outside "
+              "header:", a['no_other_copyright_expected']))
+        r.add("%-70s %6d\n" % ("Files passed:", a['passed']))
+        r.add("%-70s %6d\n" % ("Files failed:", a['failed']))
+        r.separator()
+        for key, value in sorted(a['issue'].items()):
+            r.add("%-70s %6d\n" % ('"' + key + '":', value))
+        r.separator()
         r.flush()
 
 
@@ -262,7 +349,8 @@ def add_report_cmd(subparsers):
         ReportCmd(options.repository, options.jobs,
                   options.target_fnmatches, options.json).exec()
 
-    report_help = ("")
+    report_help = ("Produces a report of copyright header notices and "
+                   "identifies")
     parser = subparsers.add_parser('report', help=report_help)
     parser.set_defaults(func=exec_report_cmd)
     add_jobs_arg(parser)
