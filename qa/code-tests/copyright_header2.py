@@ -141,7 +141,7 @@ ISSUE_1 = {
 A correct MIT License header copyrighted by 'The Bitcoin Core developers' in
 the present year can be inserted into a file by running:
 
-    $ ./contrib/devtools/copyright_header.py insert <filename>
+    $ ./copyright_header.py insert <filename>
 
 If there was a preexisting invalid header in the file, that will need to be
 manually deleted. If there is a new copyright holder for the MIT License, the
@@ -369,14 +369,23 @@ class CheckCmd(CopyrightHeaderCmd):
 
     def _analysis(self):
         a = super()._analysis()
+        a['issues'] = [{'file_path':  f['file_path'],
+                        'evaluation': f['evaluation']} for f in
+                         self.file_infos if not f['pass']]
         return a
 
     def _human_print(self):
         super()._human_print()
+        for issue in a['issues']:
+            r.add("An issue was found with ")
+            r.add_red("%s" % issue['file_path'])
+            r.add('\n\n%s\n\n' % issue['evaluation']['description'])
+            r.add('Info for resolution:\n')
+            r.add(issue['evaluation']['resolution'])
+        if len(a['issues']) == 0:
+            r.add_green("No copyright header issues found!\n")
+        r.separator()
         r.flush()
-
-    def _json_print(self):
-        super()._json_print()
 
     def _shell_exit(self):
         return (0 if len(self.results['issues']) == 0 else

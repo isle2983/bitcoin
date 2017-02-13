@@ -114,7 +114,6 @@ class BasicStyleFileInfo(FileInfo):
             lines = [self._find_line_of_match(match) for match in matches]
             for line in lines:
                 yield {'file_path':  self['file_path'],
-                       'content':    self['content'],
                        'rule_title': rule['title'],
                        'line':       line}
 
